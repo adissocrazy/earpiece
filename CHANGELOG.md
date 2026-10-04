@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Reply from the notch** (General, off by default). A Reply pill on every finished line in the notch: type the next instruction and the agent carries on in its own terminal. Claude Code uses a non-blocking asyncRewake Stop hook (up to 30 minutes, the terminal is never held); Codex holds its Stop hook for 60 seconds, only while you are away from its terminal. See [docs/answer-from-card.md](docs/answer-from-card.md#reply-from-the-notch).
+- Fix: the uninstaller now recognises every hook Earpiece writes, including the new reply hook.
+
 ## 0.4.1 (2026-10-03)
 
 - **Earpiece Pro is available.** $10 a month or $96 a year, through Dodo Payments. Free users see an Upgrade to Pro banner at the top of Overview; signed-out users get Sign in to upgrade.

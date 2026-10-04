@@ -48,6 +48,13 @@ const prefs = {
       for (const id of ["claude-code", "codex"]) if (lib.getAdapter(id)?.isInstalled?.()) connectAgents(id);
       return { answerFromCard: Boolean(value) };
     }
+    if (key === "replyFromNotch") {
+      // Same shape as answerFromCard: shared config, and the connected agents' hooks are rewritten.
+      lib.updateConfig({ replyFromNotch: Boolean(value) });
+      if (!value) for (const a of asks?.list() || []) if (a.soft) asks.cancel(a.id, "off");
+      for (const id of ["claude-code", "codex"]) if (lib.getAdapter(id)?.isInstalled?.()) connectAgents(id);
+      return { replyFromNotch: Boolean(value) };
+    }
     if (key === "notch") {
       // "auto" detects the notch; "on"/"off" override it (e.g. a notch that isn't detected).
       if (!["auto", "on", "off"].includes(value)) throw new Error("notch must be auto, on or off");
@@ -235,7 +242,7 @@ async function start() {
   if (fs.existsSync(legacyShim)) lib.writeShim(shimOpts, legacyShim);
 
   try {
-    asks = lib.createAsks({ onChange: onAsksChange });
+    asks = lib.createAsks({ onChange: onAsksChange, away: awayFromSession });
     asks.setUi(prefs.get().showCard !== false);
     hub = await lib.startHubServer({ version: app.getVersion(), onEvent: scheduleRefresh, asks });
   } catch (e) {
@@ -578,13 +585,31 @@ function deliverCard(payload) {
   else sendCard(payload);
 }
 
+// The soft reply (Reply from the notch) waiting on this line's session, as the card needs it.
+function replyFor(agent, session) {
+  const r = (asks?.list() || []).find((a) => a.soft && a.agent === agent && a.session === session);
+  return r ? { id: r.id, expiresAt: r.expiresAt } : null;
+}
+
+let lastLine = null; // { c, at }: the last done line shown, so a soft reply opened just after it can join it
 function presentCard(c) {
   if (!c?.line || prefs.get().showCard === false) return;
   // A question is on screen: keep it there. The line is still spoken, just not shown over it.
-  if (asks?.size()) return;
+  // Soft replies don't count: they ride on the lines instead.
+  if (asks?.list().some((a) => !a.soft)) return;
   const a = c.agent ? lib.getAdapter(c.agent) : null;
   const agentName = c.agent ? lib.agentConfig(lib.config(), c.agent).label || a?.name || c.agent : "Earpiece";
-  deliverCard(lib.cardPayload(c, { agentName, project: c.project }));
+  lastLine = { c, at: Date.now() };
+  deliverCard({ ...lib.cardPayload(c, { agentName, project: c.project }), reply: c.session ? replyFor(c.agent, c.session) : null });
+}
+
+// For a soft reply that holds the agent (Codex): only while you're away from its terminal. Unknown
+// terminal → don't hold, a stuck terminal is worse than a missing Reply button.
+async function awayFromSession(ask) {
+  const bundle = lib.getSession(ask.agent, ask.session)?.origin?.app?.bundle;
+  if (!bundle) return false;
+  const front = await frontApp().catch(() => null);
+  return !front || front.bundleId !== bundle;
 }
 
 // ---------- answering from the card ----------
@@ -633,7 +658,22 @@ function confirmText(ask, answer) {
 
 function onAsksChange(list, change) {
   if (prefs.get().showCard === false) return;
-  if (list.length) return deliverCard(askPayload(list));
+  const hard = list.filter((a) => !a.soft);
+  if (hard.length) return deliverCard(askPayload(hard));
+  if (change.ask.soft) {
+    if (change.type === "answered" && lastAnswer) {
+      releaseCardFocus();
+      const { ask, answer } = lastAnswer;
+      return deliverCard({ id: `ok-${ask.id}`, line: confirmText(ask, answer), kind: "done", state: "spoken", agentId: ask.agent, agentName: agentLabel(ask.agent), project: ask.project || null, brief: true });
+    }
+    // Opened: add the Reply button to that session's line if it's still the one on the card (the
+    // reply usually arrives first, but the summary can win the race). Closed: take the button away.
+    if (change.type === "open") {
+      const l = lastLine;
+      if (l && Date.now() - l.at < 60_000 && l.c.agent === change.ask.agent && l.c.session === change.ask.session) presentCard(l.c);
+    } else if (cardWin?.isVisible()) cardWin.webContents.send("card", { state: "reply-gone", replyId: change.ask.id });
+    return;
+  }
   // The last question just closed.
   releaseCardFocus();
   if (change.type === "answered" && lastAnswer) {
@@ -708,7 +748,7 @@ function connectAgents(only) {
     if (!a.install || (only && a.id !== only)) continue;
     try {
       // chain: keep any existing Codex notify command and forward to it.
-      lines.push(...a.install({ cmd: [lib.shimFile], chain: true, ask: lib.config().answerFromCard === true }));
+      lines.push(...a.install({ cmd: [lib.shimFile], chain: true, ask: lib.config().answerFromCard === true, reply: lib.config().replyFromNotch === true }));
     } catch (e) {
       lines.push(`✗ ${a.name}: ${e.message}`);
     }

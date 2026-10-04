@@ -9,7 +9,7 @@ import { config, updateConfig } from "../config.mjs";
 import { ASK_HOOK_TIMEOUT_SEC } from "../hub/asks.mjs";
 import { log, now, readJson } from "../util.mjs";
 import { P } from "../paths.mjs";
-import { permissionAsk, permissionOutput, replyAsk, replyOutput } from "./ask-util.mjs";
+import { permissionAsk, permissionOutput, replyAsk, replyOutput, turnReply } from "./ask-util.mjs";
 import { backup, commandPrefix, isOurCommand, quote } from "./install-util.mjs";
 
 const tomlFile = () => path.join(os.homedir(), ".codex", "config.toml");
@@ -183,9 +183,11 @@ export default {
 
   // Blocking hooks (`earpiece ask codex`): a question the card can answer, or null.
   // Codex doesn't accept updatedPermissions yet (it fails closed), so there is no "always allow".
-  toAsk(p) {
+  // With Reply from the notch on, any finished turn can be answered (soft unless it was a question;
+  // the hub only holds a soft one while you're away from the terminal).
+  toAsk(p, cfg = {}) {
     if (p.hook_event_name === "PermissionRequest") return permissionAsk("codex", p, { alwaysAllow: false });
-    if (p.hook_event_name === "Stop") return replyAsk("codex", p);
+    if (p.hook_event_name === "Stop") return cfg.replyFromNotch === true ? turnReply("codex", p) : replyAsk("codex", p);
     return null;
   },
 
@@ -252,7 +254,8 @@ export default {
   },
 };
 
-function installAsk({ node, bin, cmd, uninstall = false, ask = false }) {
+function installAsk({ node, bin, cmd, uninstall = false, ask: answers = false, reply = false }) {
+  const ask = answers || reply; // both run through the same Stop / PermissionRequest hooks
   const file = hooksFile();
   const exists = fs.existsSync(file);
   if (!exists && (uninstall || !ask)) return [];

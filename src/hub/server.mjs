@@ -9,7 +9,7 @@ import { config } from "../config.mjs";
 import { P } from "../paths.mjs";
 import { ensureDirs, log } from "../util.mjs";
 import { handleCodex, handleHook } from "./entry.mjs";
-import { MAX_OPEN_ASKS } from "./asks.mjs";
+import { HELD_REPLY_TIMEOUT_MS, MAX_OPEN_ASKS, REPLY_TIMEOUT_MS } from "./asks.mjs";
 import { EVENT_TYPES, normalizeEvent } from "./events.mjs";
 import { ingestEvent } from "./hub.mjs";
 import { HEADER as ORIGIN_HEADER, createOriginTracker } from "./origin.mjs";
@@ -107,6 +107,35 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
         run(`hook/${agent}`, () => handleHook(agent, payload, opts));
         return reply(202, { accepted: true });
       }
+      // Claude Code's asyncRewake Stop hook: the turn has already ended, nothing waits on this. A reply
+      // comes back as plain text; the shim prints it to stderr and exits 2, which wakes the session.
+      const replyRoute = /^\/reply\/([^/]+)$/.exec(url.pathname);
+      if (replyRoute) {
+        const agent = decodeURIComponent(replyRoute[1]);
+        if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
+        const payload = parse(raw);
+        const adapter = getAdapter(agent);
+        const ask = asks?.available() && config().replyFromNotch === true && asks.size() < MAX_OPEN_ASKS ? adapter.toReply?.(payload) : null;
+        if (!ask) {
+          res.writeHead(204);
+          return res.end();
+        }
+        noteOrigin(req, agent, payload, ask.session);
+        asks.replaceSoft(agent, ask.session);
+        const { id, promise } = asks.open(ask, { timeoutMs: REPLY_TIMEOUT_MS });
+        res.on("close", () => {
+          if (!res.writableEnded) asks.cancel(id, "gone");
+        });
+        try {
+          onEvent({ route: `reply/${agent}` });
+        } catch {}
+        const text = adapter.replyText?.(await promise);
+        if (!res.destroyed) {
+          if (text) res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }), res.end(text);
+          else res.writeHead(204), res.end();
+        }
+        return;
+      }
       // A blocking hook asks a question and waits. The body is exactly what the hook should print
       // (JSON), or empty with 204 when there is nothing to say, so the shim can pass it straight through.
       const askRoute = /^\/ask\/([^/]+)$/.exec(url.pathname);
@@ -115,13 +144,22 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
         if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
         const payload = parse(raw);
         const adapter = getAdapter(agent);
-        const ask = asks?.available() && config().answerFromCard === true && asks.size() < MAX_OPEN_ASKS ? adapter.toAsk?.(payload) : null;
+        const cfg = config();
+        let ask = asks?.available() && (cfg.answerFromCard === true || cfg.replyFromNotch === true) && asks.size() < MAX_OPEN_ASKS ? adapter.toAsk?.(payload, cfg) : null;
+        // Permissions and questions are "Answer from the card"; a reply to any turn is "Reply from the notch".
+        if (ask && !(ask.soft ? cfg.replyFromNotch === true : cfg.answerFromCard === true || (ask.kind === "reply" && cfg.replyFromNotch === true))) ask = null;
+        // A soft reply here holds the agent (Codex can't be woken later), so only while you're away.
+        if (ask?.soft) {
+          noteOrigin(req, agent, payload, ask.session);
+          if (!(await asks.away(ask))) ask = null;
+        }
         if (!ask) {
           res.writeHead(204);
           return res.end();
         }
         noteOrigin(req, agent, payload, ask.session);
-        const { id, promise } = asks.open(ask);
+        if (ask.soft) asks.replaceSoft(agent, ask.session);
+        const { id, promise } = asks.open(ask, ask.soft ? { timeoutMs: HELD_REPLY_TIMEOUT_MS } : undefined);
         // The hook was killed (you answered in the terminal, or the agent gave up): drop the card.
         res.on("close", () => {
           if (!res.writableEnded) asks.cancel(id, "gone");

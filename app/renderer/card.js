@@ -228,6 +228,23 @@ $("always").addEventListener("click", () => answer({ behavior: "always" }));
 $("deny").addEventListener("click", () => answer({ behavior: "deny" }));
 const toTerminal = () => current?.ask && view === "open" && J.card("defer", current.ask.id);
 $("terminal").addEventListener("click", toTerminal);
+// Reply from the notch: turn this done line into a reply box for its session. The island keeps
+// the line's colour (no amber); sending goes through the same checked path as question replies.
+$("replyBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (!current?.reply) return;
+  pointerEntered();
+  current = { ...current, ask: { id: current.reply.id, kind: "reply", expiresAt: current.reply.expiresAt } };
+  $("replyBtn").hidden = true;
+  showAsk(current);
+  setView("open", true);
+  // You clicked Reply, so the box may take the keyboard (same request the box itself makes on click).
+  requestAnimationFrame(async () => {
+    reportSize();
+    await J.card("focus", true);
+    box.focus();
+  });
+});
 $("replyTerminal").addEventListener("click", toTerminal);
 
 // The island never takes the keyboard on its own. Clicking into the box makes it focusable;
@@ -262,6 +279,18 @@ function setLogo(el, agentId) {
 }
 
 function show(c) {
+  // A soft reply ended without an answer (timed out, you typed in the terminal, a newer turn).
+  if (c.state === "reply-gone") {
+    if (current?.reply?.id !== c.replyId) return;
+    current.reply = null;
+    $("replyBtn").hidden = true;
+    if (current.ask?.id === c.replyId) {
+      current.ask = null;
+      hideAsk();
+      setView(idle());
+    }
+    return;
+  }
   if (c.state === "clear") {
     if (current?.ask) {
       current = null;
@@ -289,6 +318,7 @@ function show(c) {
     if (isAsk) showAsk(c);
     else hideAsk();
   }
+  $("replyBtn").hidden = !(c.reply && !isAsk);
   const chip = $("chip");
   const urgent = c.kind === "needs_input" ? "Needs you" : c.kind === "error" ? "Error" : "";
   const hush = c.state === "silent" ? REASON[c.reason] || "Silent" : "";

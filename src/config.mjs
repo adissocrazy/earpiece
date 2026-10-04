@@ -24,6 +24,7 @@ export const DEFAULTS = {
   // Approve/deny tool requests and reply to questions from the floating card. Off until you turn it
   // on: it installs blocking hooks (Claude Code, Codex) that wait for the card.
   answerFromCard: false,
+  replyFromNotch: false, // a Reply on the card after every finished turn (see docs/answer-from-card.md)
   announceAgent: false, // prefix lines with the agent name ("Codex, checkout. …")
   // Per-agent overrides, keyed by adapter id:
   //   { "codex": { "voice": "sophie", "minTurnSeconds": 0 }, "claude-code": { "enabled": true } }

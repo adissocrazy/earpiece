@@ -3,9 +3,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ASK_HOOK_TIMEOUT_SEC } from "../hub/asks.mjs";
+import { ASK_HOOK_TIMEOUT_SEC, REPLY_HOOK_TIMEOUT_SEC } from "../hub/asks.mjs";
 import { sleep } from "../util.mjs";
-import { permissionAsk, permissionOutput, replyAsk, replyOutput } from "./ask-util.mjs";
+import { permissionAsk, permissionOutput, replyAsk, replyOutput, replyText, turnReply } from "./ask-util.mjs";
 import { backup, commandPrefix, isOurCommand, quote } from "./install-util.mjs";
 
 // PostToolUse tells Earpiece the agent is moving again, so a permission alert you already
@@ -81,6 +81,12 @@ export default {
     return null;
   },
 
+  // Reply from the notch (`earpiece-hook reply claude-code`, an asyncRewake Stop hook): any finished turn.
+  toReply(p) {
+    return p.hook_event_name === "Stop" ? turnReply("claude-code", p) : null; // every reply needs a person, so no loop guard
+  },
+  replyText,
+
   // What the hook prints for the answer. null = print nothing, the terminal prompt carries on.
   askOutput(p, ask, answer) {
     return ask.kind === "permission" ? permissionOutput(p, answer) : replyOutput(answer);
@@ -107,7 +113,10 @@ export default {
     }
   },
 
-  install({ node, bin, cmd, uninstall = false, ask = false }) {
+  // ask: Answer from the card (blocking PermissionRequest + Stop). reply: Reply from the notch, an
+  // asyncRewake Stop hook that replaces the blocking Stop one (it covers questions too, without
+  // holding the turn open).
+  install({ node, bin, cmd, uninstall = false, ask = false, reply = false }) {
     const file = settingsFile();
     if (uninstall && !fs.existsSync(file)) return [];
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -123,6 +132,7 @@ export default {
     const prefix = commandPrefix({ cmd, node, bin }).map(quote).join(" ");
     const command = `${prefix} hook claude-code`;
     const askCommand = `${prefix} ask claude-code`;
+    const replyCommand = `${prefix} reply claude-code`;
     settings.hooks ||= {};
     for (const ev of new Set([...HOOK_EVENTS, ...ASK_EVENTS])) {
       const groups = (settings.hooks[ev] || [])
@@ -131,7 +141,9 @@ export default {
       if (!uninstall) {
         if (HOOK_EVENTS.includes(ev)) groups.push({ hooks: [{ type: "command", command, timeout: 10 }] });
         // Waits for an answer from the card, so it needs far longer than the 10 s above.
-        if (ask && ASK_EVENTS.includes(ev)) groups.push({ hooks: [{ type: "command", command: askCommand, timeout: ASK_HOOK_TIMEOUT_SEC }] });
+        if (ask && ASK_EVENTS.includes(ev) && !(reply && ev === "Stop"))
+          groups.push({ hooks: [{ type: "command", command: askCommand, timeout: ASK_HOOK_TIMEOUT_SEC }] });
+        if (reply && ev === "Stop") groups.push({ hooks: [{ type: "command", command: replyCommand, asyncRewake: true, timeout: REPLY_HOOK_TIMEOUT_SEC }] });
       }
       if (groups.length) settings.hooks[ev] = groups;
       else delete settings.hooks[ev];

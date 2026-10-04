@@ -20,7 +20,7 @@ export const quote = (s) => `"${String(s).replace(/\\/g, "\\\\").replace(/"/g, '
 // them replaces the hook, never doubles it.
 export const isOurCommand = (s) =>
   typeof s === "string" &&
-  /(?:earpiece\.mjs|earpiece-hook|jarvis\.mjs|jarvis-hook)["']?(?:\s*,\s*["']|\s+)(?:hook|codex|ask)\b/.test(s);
+  /(?:earpiece\.mjs|earpiece-hook|jarvis\.mjs|jarvis-hook)["']?(?:\s*,\s*["']|\s+)(?:hook|codex|ask|reply)\b/.test(s);
 
 // The command prefix hooks run: [node, bin/earpiece.mjs] for the CLI, [shim] for the app.
 export const commandPrefix = ({ cmd, node, bin }) => (cmd?.length ? cmd : [node, bin]);

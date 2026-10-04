@@ -341,11 +341,11 @@ test("a hook carrying the header stores the origin on its session", async () => 
   }
 });
 
-test("the generated shim sends the origin header on hooks and asks", { skip: !hasCurl && "no curl" }, () => {
+test("the generated shim sends the origin header on hooks, asks and replies", { skip: !hasCurl && "no curl" }, () => {
   const shim = writeShim({ fallback: ["/nonexistent/node", BIN] });
   const text = fs.readFileSync(shim, "utf8");
   assert.match(text, /^ORIGIN="ppid=\$PPID;/m);
-  assert.equal((text.match(/X-Earpiece-Origin: \$ORIGIN/g) || []).length, 2, "post() and ask");
+  assert.equal((text.match(/X-Earpiece-Origin: \$ORIGIN/g) || []).length, 3, "post(), ask and reply");
   for (const v of ["TERM_PROGRAM", "ITERM_SESSION_ID", "TMUX_PANE", "TMUX", "__CFBundleIdentifier"]) assert.ok(text.includes(`$${v}`), v);
   assert.equal(spawnSync("sh", ["-n", shim]).status, 0, "valid shell");
 });

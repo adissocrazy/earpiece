@@ -421,7 +421,7 @@ function cmdInstall(rest, uninstall = false) {
   uninstall ||= Boolean(flags.uninstall);
   ensureDirs();
   const only = flags.only ? String(flags.only).split(",").map((s) => s.trim()) : null;
-  const opts = { node: process.execPath, bin: BIN, uninstall, chain: Boolean(flags.chain), ask: config().answerFromCard === true };
+  const opts = { node: process.execPath, bin: BIN, uninstall, chain: Boolean(flags.chain), ask: config().answerFromCard === true, reply: config().replyFromNotch === true };
   // --hub: hooks call the curl shim, which talks to `earpiece serve` or the desktop app.
   // Hooks the Mac app set up stay on the shim, so re-running install doesn't disconnect the app;
   // --node switches back to calling this checkout directly.

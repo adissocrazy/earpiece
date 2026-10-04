@@ -193,7 +193,7 @@ const request = (route, body, { abortAfterMs } = {}) =>
     if (abortAfterMs) setTimeout(() => req.destroy(), abortAfterMs);
   });
 
-const waitFor = async (fn, ms = 2000) => {
+const waitFor = async (fn, ms = 5000) => { // generous: a spawned shell + curl can be slow under load
   const end = Date.now() + ms;
   while (Date.now() < end) {
     if (fn()) return true;

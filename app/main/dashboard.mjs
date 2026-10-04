@@ -218,7 +218,7 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
       keys: keyStatus(),
       stats: stats(),
       account: account(),
-      prefs: { showInDock: prefs.get().showInDock !== false, showCard: prefs.get().showCard !== false, notch: prefs.get().notch || "auto", notchIcon: prefs.get().notchIcon === "updates" ? "updates" : "always", answerFromCard: lib.config().answerFromCard === true, shareStats: prefs.get().shareStats !== false, hideSignInNudge: prefs.get().hideSignInNudge === true, openAtLogin: app.getLoginItemSettings().openAtLogin },
+      prefs: { showInDock: prefs.get().showInDock !== false, showCard: prefs.get().showCard !== false, notch: prefs.get().notch || "auto", notchIcon: prefs.get().notchIcon === "updates" ? "updates" : "always", answerFromCard: lib.config().answerFromCard === true, replyFromNotch: lib.config().replyFromNotch === true, shareStats: prefs.get().shareStats !== false, hideSignInNudge: prefs.get().hideSignInNudge === true, openAtLogin: app.getLoginItemSettings().openAtLogin },
       engines: listEngines().map((e) => ({ id: e.id, label: e.label || e.id, keyName: e.keyName || null })),
       languages: [["en", "English"], ["hinglish", "Hinglish"], ...Object.entries(LANG_NAMES)],
       openaiVoices: OPENAI_VOICES,

@@ -1,9 +1,10 @@
 // The hook shim: a tiny shell script agents call instead of Node. It sends the event to the
 // hub socket with curl (about 10 ms), and only if nothing is listening does it start the
-// core itself. It always exits 0 so it can never block or fail an agent.
+// core itself. It always exits 0 so it can never block or fail an agent, except `reply`, which exits 2
+// on purpose: that is how an asyncRewake hook wakes Claude Code with your reply.
 import fs from "node:fs";
 import path from "node:path";
-import { ASK_CURL_TIMEOUT_SEC } from "./hub/asks.mjs";
+import { ASK_CURL_TIMEOUT_SEC, REPLY_CURL_TIMEOUT_SEC } from "./hub/asks.mjs";
 import { BIN, P } from "./paths.mjs";
 
 const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -42,6 +43,16 @@ case "$1" in
     [ -S "$SOCK" ] && command -v curl >/dev/null 2>&1 || exit 0
     curl -fsS -m ${ASK_CURL_TIMEOUT_SEC} --unix-socket "$SOCK" -H 'Content-Type: application/json' -H "X-Earpiece-Origin: $ORIGIN" --data-binary @- "http://earpiece/ask/\${2:-claude-code}" 2>/dev/null
     exit 0
+    ;;
+  reply)
+    # Claude Code's asyncRewake Stop hook (Reply from the notch): runs in the background after the
+    # turn has ended. A reply from the card comes back as text; printing it to stderr and exiting 2
+    # wakes the session with it. No reply (timeout, you typed in the terminal): exit 0, nothing happens.
+    [ -S "$SOCK" ] && command -v curl >/dev/null 2>&1 || exit 0
+    out=$(curl -fsS -m ${REPLY_CURL_TIMEOUT_SEC} --unix-socket "$SOCK" -H 'Content-Type: application/json' -H "X-Earpiece-Origin: $ORIGIN" --data-binary @- "http://earpiece/reply/\${2:-claude-code}" 2>/dev/null) || exit 0
+    [ -n "$out" ] || exit 0
+    printf '%s\\n' "$out" >&2
+    exit 2
     ;;
   codex)
     [ "$EARPIECE_FORWARDED" = 1 ] || [ "$JARVIS_FORWARDED" = 1 ] && exit 0

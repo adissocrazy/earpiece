@@ -99,6 +99,29 @@ export function replyAsk(agent, p) {
   };
 }
 
+/**
+ * A Stop payload → a reply the card can offer after ANY finished turn ("Reply from the notch").
+ * A turn that ends with a question stays a normal, loud ask; anything else is soft: it rides on the
+ * done line as a Reply button instead of turning the island amber.
+ */
+export function turnReply(agent, p) {
+  const text = String(p?.last_assistant_message || "").trim();
+  if (!text) return null;
+  const ask = replyAsk(agent, p);
+  if (ask) return ask;
+  const last = text.split(/\n{2,}/).filter(Boolean).pop() || text;
+  return {
+    kind: "reply",
+    soft: true,
+    agent,
+    session: String(p.session_id || "unknown"),
+    cwd: p.cwd || null,
+    project: p.cwd ? projectName(p.cwd) : null,
+    line: clip(redact(last).replace(INVISIBLE, ""), 360),
+    canAlways: false,
+  };
+}
+
 /** The hook's stdout for a card answer. null = print nothing (the agent's own flow continues). */
 export function permissionOutput(payload, answer, { alwaysAllow = true } = {}) {
   if (!answer) return null;
@@ -113,9 +136,14 @@ export function permissionOutput(payload, answer, { alwaysAllow = true } = {}) {
   return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision } };
 }
 
+/** The words the agent receives for a reply from the card. */
+export const replyText = (answer) => {
+  const text = String(answer?.text || "").trim();
+  return text ? `The user replied from the Earpiece card: ${text}` : null;
+};
+
 /** A reply typed on the card becomes the agent's next instruction, the way a prompt would. */
 export function replyOutput(answer) {
-  const text = String(answer?.text || "").trim();
-  if (!text) return null;
-  return { decision: "block", reason: `The user replied from the Earpiece card: ${text}` };
+  const reason = replyText(answer);
+  return reason ? { decision: "block", reason } : null;
 }

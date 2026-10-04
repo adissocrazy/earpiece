@@ -12,6 +12,13 @@ import { now } from "../util.mjs";
 export const ASK_TIMEOUT_MS = 115_000;
 export const ASK_HOOK_TIMEOUT_SEC = 125;
 export const ASK_CURL_TIMEOUT_SEC = 120;
+// "Reply from the notch" for Claude Code runs as an asyncRewake Stop hook: nothing waits on it, so
+// the window can be long. Hub < curl < hook timeout, like above.
+export const REPLY_TIMEOUT_MS = 29 * 60_000;
+export const REPLY_CURL_TIMEOUT_SEC = 29 * 60 + 30;
+export const REPLY_HOOK_TIMEOUT_SEC = 30 * 60;
+// Codex can't be woken later, so its reply holds the Stop hook: short, and only while you're away.
+export const HELD_REPLY_TIMEOUT_MS = 60_000;
 
 const BEHAVIORS = new Set(["allow", "always", "deny"]);
 const MAX_REPLY = 4000;
@@ -35,8 +42,10 @@ export function checkAnswer(ask, answer) {
 /**
  * @param {object} o
  * @param {(list: object[], change: {type: string, ask: object}) => void} [o.onChange] called after every open/close
+ * @param {(ask: object) => Promise<boolean>} [o.away] for a soft reply that holds the agent (Codex): is
+ *   the person away from that agent's terminal? The app answers; without one, never hold.
  */
-export function createAsks({ onChange = () => {} } = {}) {
+export function createAsks({ onChange = () => {}, away = async () => false } = {}) {
   const open = new Map(); // id -> { ask, settle, timer }
   let uiCount = 0;
 
@@ -64,6 +73,7 @@ export function createAsks({ onChange = () => {} } = {}) {
       uiCount = on ? 1 : 0;
     },
     available: () => uiCount > 0,
+    away: (ask) => Promise.resolve(away(ask)).catch(() => false),
 
     /**
      * Open an ask. Resolves to the answer, or null (timed out, cancelled, superseded).
@@ -91,6 +101,11 @@ export function createAsks({ onChange = () => {} } = {}) {
     },
 
     cancel: (id, why = "cancelled") => close(id, null, why),
+
+    /** A newer finished turn replaces the soft reply waiting on the same session (one per session). */
+    replaceSoft(agent, session) {
+      for (const { ask } of [...open.values()]) if (ask.soft && ask.agent === agent && ask.session === session) close(ask.id, null, "superseded");
+    },
 
     /**
      * The session moved on by itself, so a question about it is stale: a new prompt (turn_start)

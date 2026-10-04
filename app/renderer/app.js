@@ -951,6 +951,11 @@ function general() {
         "Approve or deny Claude Code and Codex tool requests, and reply when they ask you something, right from the card. Needs the card on. Restart open sessions after changing it; in Codex, trust the new hooks once with /hooks. If you don't answer in about two minutes, the question goes back to the terminal.",
         sw(P.answerFromCard && P.showCard, (v) => setPref("answerFromCard", v), "Answer from the card"),
       ),
+      row(
+        "Reply from the notch",
+        "A Reply button on every finished line, not only questions: type the next instruction and the agent carries on in its own terminal. Claude Code: for up to 30 minutes, without holding the terminal. Codex: for a minute, and only while you're away from its terminal. Restart open sessions after changing it; in Codex, trust the new hooks once with /hooks.",
+        sw(P.replyFromNotch && P.showCard, (v) => setPref("replyFromNotch", v), "Reply from the notch"),
+      ),
       D.account?.user
         ? row(
             "Usage stats",

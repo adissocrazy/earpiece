@@ -38,3 +38,20 @@ Mac app: General → **Answer from the card**. CLI: `earpiece answers on` (needs
 ## How it works
 
 `earpiece ask <agent>` (or `earpiece-hook ask <agent>`) reads the hook payload and POSTs it to the hub's `/ask/<agent>`, keeping the connection open. The hub turns it into a question (`src/hub/asks.mjs`), the app shows it, and your answer comes back as the HTTP body, which is exactly the JSON the hook prints to stdout. An empty body (204) prints nothing.
+
+## Reply from the notch
+
+A second switch, General → **Reply from the notch** (`"replyFromNotch": true` in config), puts a small
+**Reply** pill on every finished line in the notch, not only on questions. Click it, type the next
+instruction, press Enter: the agent carries on in its own terminal. Nothing is typed into the terminal.
+
+- **Claude Code**: an `asyncRewake` Stop hook (`earpiece-hook reply claude-code`, timeout 30 min). The turn
+  ends normally, so the terminal is never held. Your reply comes back to the hook, which prints it to
+  stderr and exits 2; Claude Code wakes the session with it. It replaces the blocking Stop hook from
+  Answer from the card (questions get a Reply too); permission requests stay blocking.
+- **Codex**: Codex can't wake an idle session, so its Stop hook is held instead, for 60 seconds, and only
+  while you're away from that agent's terminal (the app compares the front app with the terminal the
+  session runs in; unknown terminal → not held). At the keyboard, Codex is never held.
+- A pending reply goes away when you type in the terminal, a newer turn on that session finishes, the
+  window ends, or the app quits. One per session. A reply is only a new message: it can't approve anything.
+- Restart open sessions after switching it; in Codex, trust the new hooks once with `/hooks`.
