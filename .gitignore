@@ -14,3 +14,6 @@ samples/
 .DS_Store
 coverage/
 *.log
+
+# Earpiece Pro: kept local, never pushed to the public repo
+/pro/

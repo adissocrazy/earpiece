@@ -300,6 +300,7 @@ async function start() {
   }
   syncAccount().then(refresh);
   setInterval(() => syncAccount().then(refresh), 10 * 60_000).unref?.();
+  await loadPro();
   // Started at login: stay in the menu bar. Opened by you: show the window.
   const login = app.getLoginItemSettings();
   if (!(login.wasOpenedAtLogin || login.wasOpenedAsHidden)) showMain();
@@ -342,6 +343,7 @@ function state() {
       status: s.status || "idle",
       updated: s.updated || 0,
       where: s.origin ? lib.describeOrigin(s.origin) : "",
+      run: s.origin?.run || null,
       // The row already shows the agent and project, so drop them from the spoken line.
       // Once you mark it done, the old question is stale; say so instead.
       lastLine: s.status === "done" && s.markedByUser >= (s.updated || 0) - 5 ? "Marked done by you" : lib.stripLeadIn(s.lastLine || "", { agentName: agent, project }),
@@ -379,6 +381,43 @@ function refresh() {
   popover?.webContents.send("state", s);
   win?.webContents.send("state", s);
   sendAgents(s);
+  pro?.onState?.(s);
+}
+
+// ---------- Pro ----------
+// Pro features live in app/pro (Resources/pro when packaged), a folder that isn't part of the
+// open-source repo. Without it none of this does anything. The module gets the few app pieces it
+// needs, adds its own UI to the card, and answers the "pro" IPC channel.
+const PRO_DIR = app.isPackaged ? path.join(process.resourcesPath, "pro") : path.resolve(APP_ROOT, "..", "pro");
+let pro = null;
+let quitChecked = false;
+
+async function loadPro() {
+  const entry = path.join(PRO_DIR, "main", "pro.mjs");
+  if (!fs.existsSync(entry)) return;
+  try {
+    const mod = await import(pathToFileURL(entry).href);
+    pro = await mod.setup({
+      app,
+      dialog,
+      BrowserWindow,
+      lib,
+      dir: PRO_DIR,
+      isPro: () => plan?.plan === "pro",
+      upgrade: () => (auth.user() ? openBilling({ action: "checkout", interval: "month" }) : showMain("general")),
+      sessions: () => state().sessions,
+      card: () => (cardWin && cardReady ? cardWin : null),
+      cardFocus: (on) => (on ? grabCardFocus() : releaseCardFocus()),
+      canDictate,
+      transcribe,
+      webPreferences,
+      lockDown,
+      refresh,
+    });
+    if (cardWin && cardReady) pro?.onCard?.(cardWin.webContents);
+  } catch (e) {
+    lib.log({ error: `pro: ${e.message}` });
+  }
 }
 
 let speakingShown = false;
@@ -487,6 +526,7 @@ function createCardWin() {
   lockDown(cardWin);
   cardWin.webContents.once("did-finish-load", () => {
     cardReady = true;
+    pro?.onCard?.(cardWin.webContents);
     cardPointer.start();
     sendAgents();
     if (cardPending) sendCard(cardPending);
@@ -1022,6 +1062,8 @@ function appMenu() {
 async function jumpToSession(agent, session, { fallback = true } = {}) {
   const a = agent ? String(agent) : null;
   const s = a && session ? lib.getSession(a, String(session)) : null;
+  // Started by Earpiece: its terminal is a window of ours.
+  if (s?.origin?.run && pro?.openRun?.(s.origin.run)) return { ok: true, how: "earpiece-run", precision: "tab" };
   let r;
   try {
     r = await lib.jumpTo({ agent: a, origin: s?.origin || null, cwd: s?.cwd || null });
@@ -1140,6 +1182,14 @@ ipcMain.handle("dictate", async (e, action, bytes, mime) => {
   return { ok: false, error: "unknown action" };
 });
 
+ipcMain.handle("pro", async (e, action, value) => {
+  if (!pro?.handle) return { ok: false, error: "not available" };
+  try {
+    return { ok: true, value: await pro.handle(e.sender, String(action), value) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("ask-answer", (e, id, answer) => {
   if (!cardWin || e.sender !== cardWin.webContents || !asks) return { ok: false, error: "not available" };
   const ask = asks.get(String(id));
@@ -1186,6 +1236,13 @@ ipcMain.handle("dash", async (e, name, args) => {
 
 app.on("activate", () => showMain()); // dock icon clicked
 app.on("before-quit", async (e) => {
+  // Pro may need to ask first (agents still running in Earpiece terminals). false: don't quit.
+  if (!quitChecked && pro?.beforeQuit) {
+    e.preventDefault();
+    if (!(await pro.beforeQuit().catch(() => true))) return;
+    quitChecked = true;
+    return app.quit();
+  }
   // Quit means Earpiece is off: stop the line playing, drop the queue and its workers, and leave a
   // marker so hooks that fire while the app is closed speak (and summarise) nothing.
   if (!quitting && lib.P) {

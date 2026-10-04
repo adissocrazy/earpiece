@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld("earpiece", {
   // Voice replies: "start" checks the mic permission; "transcribe" turns a recorded clip into text.
   dictate: (action, bytes, mime) => ipcRenderer.invoke("dictate", action, bytes, mime),
   previewCard:() => ipcRenderer.invoke("card-preview"),
+  // Pro features (loaded only when present): one checked entry point and one event channel.
+  pro: (action, value) => ipcRenderer.invoke("pro", action, value),
+  onPro: (cb) => {
+    const h = (_e, m) => cb(m);
+    ipcRenderer.on("pro", h);
+    return () => ipcRenderer.off("pro", h);
+  },
   onCard: (cb) => {
     const h = (_e, c) => cb(c);
     ipcRenderer.on("card", h);

@@ -450,3 +450,13 @@ test("the shim drops a header with control characters or an absurd length, and s
   assert.match(probe({ TERM_PROGRAM: "x".repeat(3000) }), /^ppid=\d+$/);
   assert.match(probe({ TERM_PROGRAM: "$(touch /tmp/pwned);`id`\"'" }), /tp=\$\(touch/, "sent as inert text");
 });
+
+test("an agent Earpiece started: the run id comes through, and its terminal is Earpiece's", async () => {
+  assert.equal(O.parseOriginHeader(header({ run: "run-k3x9-ab12" })).run, "run-k3x9-ab12");
+  assert.equal(O.parseOriginHeader(header({ run: "../etc" })).run, null);
+  const o = await O.resolveOrigin(O.parseOriginHeader(header({ ppid: 300, tp: "iTerm.app", run: "run-k3x9-ab12" })), { agent: "claude-code", run: fakeRun({ ps: PS_ITERM }) });
+  assert.equal(o.app.id, "earpiece");
+  assert.equal(o.run, "run-k3x9-ab12");
+  assert.equal(o.jump, "earpiece-run");
+  assert.equal(O.jumpPrecision(o), "tab");
+});

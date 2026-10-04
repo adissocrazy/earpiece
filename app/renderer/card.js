@@ -140,7 +140,8 @@ function lingerFor(c) {
 function schedule() {
   clearTimeout(timer);
   if (hovering) return;
-  if (view === "list") return void (timer = setTimeout(() => setView(idle()), LIST_LEAVE_MS));
+  // Typing in a field on the list (Pro's run controls) keeps it open.
+  if (view === "list") return void (timer = setTimeout(() => !document.activeElement?.matches?.("input, textarea, select") && setView(idle()), LIST_LEAVE_MS));
   if (!current) return;
   if (view === "peek") timer = setTimeout(() => setView(current?.brief ? idle() : "mini"), peekFor(current));
   else if (view === "mini" && !current.ask) timer = setTimeout(() => setView(idle()), lingerFor(current));
@@ -474,7 +475,7 @@ function renderAgents() {
   const now = Date.now();
   const skew = now - (agents.now || now); // ages are counted from the app's clock
   list.replaceChildren(
-    ...agents.rows.map((r) => {
+    ...agents.rows.filter((r) => !r.run).map((r) => {
       const li = el("li", r.status);
       li.title = `Go to ${r.agent}${r.project ? ` · ${r.project}` : ""}`;
       const av = el("span", "av");

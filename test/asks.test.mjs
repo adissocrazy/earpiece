@@ -181,9 +181,9 @@ test("hook outputs match the Claude Code and Codex formats", () => {
 
 // ---------- the hub route ----------
 
-const request = (route, body, { abortAfterMs } = {}) =>
+const request = (route, body, { abortAfterMs, headers = {} } = {}) =>
   new Promise((resolve, reject) => {
-    const req = http.request({ socketPath: P.socket, path: route, method: "POST", agent: false, headers: { "Content-Type": "application/json" } }, (res) => {
+    const req = http.request({ socketPath: P.socket, path: route, method: "POST", agent: false, headers: { "Content-Type": "application/json", ...headers } }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => resolve({ status: res.statusCode, body: data }));
@@ -483,4 +483,20 @@ test("earpiece answers on|off installs and removes the blocking hooks for connec
   assert.equal(run("uninstall").status, 0);
   assert.equal(askCmds(claudeFile), 0);
   assert.equal(askCmds(codexHooks), 0);
+});
+
+test("/ask: an agent Earpiece started (run id in the origin) brings its permission prompts to the card even with the setting off", async () => {
+  const asks = createAsks();
+  asks.setUi(true);
+  const hub = await startHubServer({ asks });
+  try {
+    updateConfig({ answerFromCard: false });
+    assert.equal((await request("/ask/claude-code", PERM, { headers: { "X-Earpiece-Origin": "ppid=300;run=" } })).status, 204, "no run id: the setting decides");
+    const pending = request("/ask/claude-code", PERM, { headers: { "X-Earpiece-Origin": "ppid=300;run=run-abc123" } });
+    assert.ok(await waitFor(() => asks.size() === 1));
+    asks.closeAll();
+    assert.equal((await pending).status, 204);
+  } finally {
+    await hub.close();
+  }
 });

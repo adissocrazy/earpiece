@@ -23,7 +23,7 @@ export function shimScript({ fallback = [process.execPath, BIN], env = {}, socke
 SOCK=${sq(socket)}
 EXE=${sq(fallback[0])}
 # Where this agent runs, for the hub to resolve (terminal app, tab, tmux pane). Plain expansion: no forks.
-ORIGIN="ppid=$PPID;tp=$TERM_PROGRAM;bid=$__CFBundleIdentifier;isid=$ITERM_SESSION_ID;tsid=$TERM_SESSION_ID;tmux=$TMUX;pane=$TMUX_PANE;kitty=$KITTY_WINDOW_ID;wez=$WEZTERM_PANE;vsc=$VSCODE_GIT_ASKPASS_NODE;gh=$GHOSTTY_RESOURCES_DIR"
+ORIGIN="ppid=$PPID;tp=$TERM_PROGRAM;bid=$__CFBundleIdentifier;isid=$ITERM_SESSION_ID;tsid=$TERM_SESSION_ID;tmux=$TMUX;pane=$TMUX_PANE;kitty=$KITTY_WINDOW_ID;wez=$WEZTERM_PANE;vsc=$VSCODE_GIT_ASKPASS_NODE;gh=$GHOSTTY_RESOURCES_DIR;run=$EARPIECE_RUN_ID"
 # A control character or a huge value would make the hub reject the header (curl -f then fails). Send the bare pid instead.
 case $ORIGIN in *[[:cntrl:]]*) ORIGIN="ppid=$PPID";; esac
 [ "\${#ORIGIN}" -gt 1500 ] && ORIGIN="ppid=$PPID"

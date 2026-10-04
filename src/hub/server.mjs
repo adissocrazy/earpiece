@@ -12,7 +12,7 @@ import { handleCodex, handleHook } from "./entry.mjs";
 import { HELD_REPLY_TIMEOUT_MS, MAX_OPEN_ASKS, REPLY_TIMEOUT_MS } from "./asks.mjs";
 import { EVENT_TYPES, normalizeEvent } from "./events.mjs";
 import { ingestEvent } from "./hub.mjs";
-import { HEADER as ORIGIN_HEADER, createOriginTracker } from "./origin.mjs";
+import { HEADER as ORIGIN_HEADER, createOriginTracker, parseOriginHeader } from "./origin.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const AGENT_ID = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -144,10 +144,13 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
         if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
         const payload = parse(raw);
         const adapter = getAdapter(agent);
+        // An agent Earpiece started in its own terminal is run from the notch: its questions always come here.
+        const fromRun = Boolean(parseOriginHeader(req.headers[ORIGIN_HEADER])?.run);
         const cfg = config();
-        let ask = asks?.available() && (cfg.answerFromCard === true || cfg.replyFromNotch === true) && asks.size() < MAX_OPEN_ASKS ? adapter.toAsk?.(payload, cfg) : null;
+        const answering = cfg.answerFromCard === true || fromRun;
+        let ask = asks?.available() && (answering || cfg.replyFromNotch === true) && asks.size() < MAX_OPEN_ASKS ? adapter.toAsk?.(payload, cfg) : null;
         // Permissions and questions are "Answer from the card"; a reply to any turn is "Reply from the notch".
-        if (ask && !(ask.soft ? cfg.replyFromNotch === true : cfg.answerFromCard === true || (ask.kind === "reply" && cfg.replyFromNotch === true))) ask = null;
+        if (ask && !(ask.soft ? cfg.replyFromNotch === true : answering || (ask.kind === "reply" && cfg.replyFromNotch === true))) ask = null;
         // A soft reply here holds the agent (Codex can't be woken later), so only while you're away.
         if (ask?.soft) {
           noteOrigin(req, agent, payload, ask.session);

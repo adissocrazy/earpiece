@@ -53,6 +53,14 @@
       {
         "from": "../package.json",
         "to": "core/package.json"
+      },
+      {
+        "from": "../pro",
+        "to": "pro",
+        "filter": [
+          "**/*",
+          "!test/**"
+        ]
       }
     ],
     "mac": {
@@ -71,6 +79,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
+      "x64ArchFiles": "Contents/Resources/pro/node_modules/node-pty/prebuilds/**",
       "icon": "build/icon.png",
       "identity": "-",
       "hardenedRuntime": false,

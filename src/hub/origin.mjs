@@ -60,6 +60,7 @@ const RE = {
   socket: /^\/[A-Za-z0-9._\/@ ,-]{1,200}$/,
   pane: /^%\d{1,7}$/,
   digits: /^\d{1,9}$/,
+  run: /^run-[a-z0-9-]{1,40}$/,
 };
 
 /** "ppid=12;tp=iTerm.app;…" → validated signals. Anything that doesn't look right is dropped. */
@@ -90,6 +91,8 @@ export function parseOriginHeader(header) {
     wezterm: ok(kv.wez, RE.digits),
     appHint: vscApp && RE.word.test(vscApp.replace(/ /g, "-")) ? vscApp : null,
     ghostty: Boolean(kv.gh),
+    // Set when Earpiece itself started the agent in a terminal of its own.
+    run: ok(kv.run, RE.run),
   };
 }
 
@@ -98,7 +101,7 @@ export function rawFromEnv(env = process.env, ppid = process.ppid) {
   const g = (k) => String(env[k] ?? "").replace(/[;\n\r]/g, " ");
   return parseOriginHeader(
     `ppid=${ppid};tp=${g("TERM_PROGRAM")};bid=${g("__CFBundleIdentifier")};isid=${g("ITERM_SESSION_ID")};tsid=${g("TERM_SESSION_ID")};` +
-      `tmux=${g("TMUX")};pane=${g("TMUX_PANE")};kitty=${g("KITTY_WINDOW_ID")};wez=${g("WEZTERM_PANE")};vsc=${g("VSCODE_GIT_ASKPASS_NODE")};gh=${g("GHOSTTY_RESOURCES_DIR")}`,
+      `tmux=${g("TMUX")};pane=${g("TMUX_PANE")};kitty=${g("KITTY_WINDOW_ID")};wez=${g("WEZTERM_PANE")};vsc=${g("VSCODE_GIT_ASKPASS_NODE")};gh=${g("GHOSTTY_RESOURCES_DIR")};run=${g("EARPIECE_RUN_ID")}`,
   );
 }
 
@@ -252,6 +255,9 @@ export async function resolveOrigin(raw, { agent = "", run: runCmd = run } = {})
     else if (raw.wezterm) (app = classifyApp({ term: "WezTerm" }), via.push("env"));
   }
 
+  // Started by Earpiece: its terminal lives in the app, whatever the process tree says.
+  if (raw.run) app = { id: "earpiece", name: "Earpiece", bundle: null, editor: false };
+
   const jump = jumpMethod({ app, tabTty, iterm: raw.iterm, tmux });
   return {
     v: 1,
@@ -262,6 +268,7 @@ export async function resolveOrigin(raw, { agent = "", run: runCmd = run } = {})
     app,
     iterm: raw.iterm || null,
     termSession: raw.termSession || null,
+    run: raw.run || null,
     tmux,
     jump: jump.method,
     confidence: jump.confidence,
@@ -274,13 +281,14 @@ export async function resolveOrigin(raw, { agent = "", run: runCmd = run } = {})
 /** How a click could get you there, and how sure we are it lands on the right tab. */
 export function jumpMethod({ app, tabTty, iterm, tmux }) {
   if (!app) return { method: "none", confidence: "none" };
+  if (app.id === "earpiece") return { method: "earpiece-run", confidence: "tab" };
   if (app.id === "iterm2" && (tabTty || (!tmux && iterm))) return { method: "iterm2-session", confidence: "tab" };
   if (app.id === "terminal" && tabTty) return { method: "terminal-tty", confidence: "tab" };
   if (app.editor) return { method: "editor-window", confidence: "window" };
   return { method: "app", confidence: "app" };
 }
 
-const WHAT = { "iterm2-session": "tab", "terminal-tty": "tab", "editor-window": "window", app: "app only", none: "unknown" };
+const WHAT = { "earpiece-run": "tab", "iterm2-session": "tab", "terminal-tty": "tab", "editor-window": "window", app: "app only", none: "unknown" };
 
 /** "iTerm2 · ttys004 · tmux main:2.0" */
 export function describeOrigin(o) {
