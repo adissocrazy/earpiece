@@ -407,6 +407,9 @@ async function loadPro() {
       upgrade: () => (auth.user() ? openBilling({ action: "checkout", interval: "month" }) : showMain("general")),
       sessions: () => state().sessions,
       card: () => (cardWin && cardReady ? cardWin : null),
+      main: () => win,
+      showMain,
+      addSection: (id) => SECTIONS.includes(id) || SECTIONS.push(id),
       cardFocus: (on) => (on ? grabCardFocus() : releaseCardFocus()),
       canDictate,
       transcribe,
@@ -415,6 +418,7 @@ async function loadPro() {
       refresh,
     });
     if (cardWin && cardReady) pro?.onCard?.(cardWin.webContents);
+    if (win && !win.webContents.isLoading()) pro?.onMain?.(win.webContents);
   } catch (e) {
     lib.log({ error: `pro: ${e.message}` });
   }
@@ -979,6 +983,7 @@ function createMain() {
     webPreferences: webPreferences(),
   });
   win.loadFile(path.join(APP_ROOT, "renderer", "app.html"));
+  win.webContents.on("did-finish-load", () => pro?.onMain?.(win.webContents));
   lockDown(win);
   // Closing the window keeps Earpiece running in the menu bar; ⌘Q quits.
   win.on("close", (e) => {
