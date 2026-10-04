@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **‹ › between waiting sessions.** When more than one agent is waiting on you (questions, permission requests, open Replies), the notch card shows ‹ and › with a "2 / 4" counter to step between them (⌥← / ⌥→ in the reply box). Questions come first, oldest first, then replies, newest first. Half-typed replies are kept per session, and answers still only go to the session on screen.
 - Fix: the notch card now shows over full-screen apps (Cursor, VS Code, a full-screen terminal). It is a macOS panel window, so it joins every Space without hiding the Dock icon, and clicking it no longer pulls focus from the app you are in.
 
 ## 0.4.2 (2026-10-04)

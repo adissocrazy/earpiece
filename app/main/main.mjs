@@ -637,9 +637,9 @@ async function transcribe(bytes, mime) {
 let lastLine = null; // { c, at }: the last done line shown, so a soft reply opened just after it can join it
 function presentCard(c) {
   if (!c?.line || prefs.get().showCard === false) return;
-  // A question is on screen: keep it there. The line is still spoken, just not shown over it.
-  // Soft replies don't count: they ride on the lines instead.
-  if (asks?.list().some((a) => !a.soft)) return;
+  // A question is on screen, or you're replying to sessions: keep it there. The line is still spoken.
+  // Otherwise soft replies don't block lines: they ride on them instead.
+  if (navOpen || asks?.list().some((a) => !a.soft)) return;
   const a = c.agent ? lib.getAdapter(c.agent) : null;
   const agentName = c.agent ? lib.agentConfig(lib.config(), c.agent).label || a?.name || c.agent : "Earpiece";
   lastLine = { c, at: Date.now() };
@@ -674,19 +674,29 @@ const ARM_MS = 700; // the renderer disables the buttons for this long; the app 
 // when it folds back. Answers are only taken for this one, ARM_MS after it opened.
 let shown = { id: null, at: 0 };
 
-function askPayload(list) {
-  const a = list[0];
+// Which waiting item the card shows (‹ › step through them). navOpen: you opened a Reply yourself, so
+// the card stays on the list of replies even when no question is waiting.
+let focusId = null;
+let navOpen = false;
+
+function askPayload(list, dir = 0) {
+  const pick = lib.navPick(lib.navItems(list), focusId, dir);
+  const a = pick.item;
+  focusId = a.id;
   if (shown.id !== a.id) shown = { id: null, at: 0 };
   return {
     id: a.id,
     line: a.line,
-    kind: "needs_input",
+    kind: a.soft ? "done" : "needs_input",
+    soft: Boolean(a.soft),
+    pos: pick.index + 1,
+    total: pick.total,
     state: "ask",
     agentId: a.agent,
     agentName: agentLabel(a.agent),
     session: a.session || null,
     project: a.project || null,
-    more: list.length - 1,
+    more: 0, // the ‹ › counter replaces "+N more"
     at: a.at,
     ask: { id: a.id, kind: a.kind, tool: a.tool || null, detail: a.detail || "", why: a.why || "", canAlways: Boolean(a.canAlways), alwaysRule: a.alwaysRule || "", partial: Boolean(a.partial), expiresAt: a.expiresAt, canDictate: canDictate() },
   };
@@ -702,7 +712,9 @@ function confirmText(ask, answer) {
 function onAsksChange(list, change) {
   if (prefs.get().showCard === false) return;
   const hard = list.filter((a) => !a.soft);
-  if (hard.length) return deliverCard(askPayload(hard));
+  // A question is waiting, or you're already working through replies: show the list (questions first).
+  if (hard.length || (navOpen && list.length)) return deliverCard(askPayload(list));
+  navOpen = false;
   if (change.ask.soft) {
     if (change.type === "answered" && lastAnswer) {
       releaseCardFocus();
@@ -1077,9 +1089,21 @@ ipcMain.handle("card", (e, action, value) => {
   }
   else if (action === "focus") (value ? grabCardFocus() : releaseCardFocus());
   else if (action === "size") {} // the window has a fixed height now (see CARD_H)
-  else if (action === "expanded") {
+  // ‹ › on the card: step to the previous / next waiting item. "reply": you clicked Reply on a line,
+  // so the card switches to that reply and the others become reachable too.
+  else if (action === "nav" || action === "reply") {
+    const list = asks?.list() || [];
+    if (!list.length) return;
+    if (action === "reply") (focusId = String(value || ""), (navOpen = true));
+    deliverCard(askPayload(list, action === "nav" ? (Number(value) < 0 ? -1 : 1) : 0));
+  } else if (action === "expanded") {
     const id = value == null ? null : String(value);
     shown = id && asks?.get(id) ? { id, at: Date.now() } : { id: null, at: 0 };
+    // Folded away with only replies left: back to plain lines (questions keep the card as before).
+    if (!id && navOpen && !(asks?.list() || []).some((a) => !a.soft)) {
+      navOpen = false;
+      if (cardWin?.isVisible()) cardWin.webContents.send("card", { state: "clear" });
+    }
   } else if (action === "defer") {
     // "Answer in the terminal instead": hand the question back and take you to that terminal.
     const ask = asks?.get(String(value));

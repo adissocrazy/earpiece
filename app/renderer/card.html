@@ -46,6 +46,7 @@
 
     <div class="full" id="full">
       <div class="head">
+        <button class="nav" id="navPrev" title="Previous session waiting on you (⌥←)" aria-label="Previous waiting session" hidden><svg viewBox="0 0 12 12"><path d="M7.5 2.5 4 6l3.5 3.5" /></svg></button>
         <div class="avatar" id="avatar"><span class="ring"></span></div>
         <div class="text">
           <div class="meta"><b id="who"></b><span id="project"></span><span class="chip" id="chip" hidden></span></div>
@@ -53,6 +54,8 @@
         </div>
         <div class="side">
           <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="navpos" id="navPos" hidden></span>
+          <button class="nav" id="navNext" title="Next session waiting on you (⌥→)" aria-label="Next waiting session" hidden><svg viewBox="0 0 12 12"><path d="M4.5 2.5 8 6l-3.5 3.5" /></svg></button>
           <button class="pill" id="replyBtn" title="Reply to this agent" hidden>Reply</button>
           <button class="btn" id="stop" title="Stop talking" aria-label="Stop talking"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" /></svg></button>
           <button class="btn" id="close" title="Dismiss" aria-label="Dismiss"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" /></svg></button>

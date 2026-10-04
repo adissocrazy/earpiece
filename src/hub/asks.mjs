@@ -24,6 +24,25 @@ const BEHAVIORS = new Set(["allow", "always", "deny"]);
 const MAX_REPLY = 4000;
 export const MAX_OPEN_ASKS = 20; // a flood of asks must not bury the real ones
 
+/**
+ * What the card's ‹ › arrows step through: every session you can send input to right now.
+ * Questions and permission requests first (oldest first, they hold an agent), then open Reply from
+ * the notch replies (newest first).
+ */
+export function navItems(list) {
+  const hard = list.filter((a) => !a.soft).sort((a, b) => a.at - b.at);
+  const soft = list.filter((a) => a.soft).sort((a, b) => b.at - a.at);
+  return [...hard, ...soft];
+}
+
+/** The item to show: the focused one if it's still open, else the first. dir ±1 steps and wraps. */
+export function navPick(items, focusId, dir = 0) {
+  if (!items.length) return null;
+  const at = Math.max(0, items.findIndex((a) => a.id === focusId));
+  const i = (((at + dir) % items.length) + items.length) % items.length;
+  return { item: items[i], index: i, total: items.length };
+}
+
 /** Check what the card sent back for an ask. Returns the clean answer, or throws. */
 export function checkAnswer(ask, answer) {
   if (ask.kind === "permission") {

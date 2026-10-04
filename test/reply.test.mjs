@@ -265,3 +265,21 @@ test("CLI `earpiece reply` (hooks installed without the app) behaves like the sh
   assert.equal(none.status, 0, "no hub: nothing happens");
   assert.equal(none.stderr, "");
 });
+
+test("‹ › order: questions and permissions first (oldest first), then replies (newest first); steps wrap", async () => {
+  const { navItems, navPick } = await import("../src/hub/asks.mjs");
+  const list = [
+    { id: "r-old", soft: true, at: 10 },
+    { id: "q-new", at: 30 },
+    { id: "r-new", soft: true, at: 40 },
+    { id: "q-old", at: 20 },
+  ];
+  const items = navItems(list);
+  assert.deepEqual(items.map((a) => a.id), ["q-old", "q-new", "r-new", "r-old"]);
+  assert.deepEqual(navPick(items, null), { item: items[0], index: 0, total: 4 }, "nothing focused: the oldest question");
+  assert.equal(navPick(items, "q-new", 1).item.id, "r-new");
+  assert.equal(navPick(items, "r-old", 1).item.id, "q-old", "wraps forward");
+  assert.equal(navPick(items, "q-old", -1).item.id, "r-old", "wraps back");
+  assert.equal(navPick(items, "gone-id").item.id, "q-old", "focused item answered: back to the first");
+  assert.equal(navPick([], "x"), null);
+});

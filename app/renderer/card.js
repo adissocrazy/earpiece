@@ -178,6 +178,10 @@ function startTimer(expiresAt) {
   bar.style.transform = "scaleX(0)";
 }
 
+// Half-typed replies, per waiting item, so ‹ › doesn't lose what you were writing.
+const drafts = new Map();
+let openNext = false; // you clicked Reply / an arrow: open the next ask card instead of folding it to mini
+
 function showAsk(c) {
   const a = c.ask;
   const perm = a.kind === "permission";
@@ -194,7 +198,7 @@ function showAsk(c) {
   $("always").hidden = !a.canAlways;
   $("reply").hidden = perm;
   $("mic").hidden = perm || !a.canDictate;
-  box.value = "";
+  box.value = drafts.get(a.id) || "";
   box.placeholder = `Reply to ${c.agentName || "the agent"}…  (Enter to send, Shift+Enter for a new line)`;
   $("askErr").hidden = !a.partial;
   arm(false);
@@ -218,6 +222,7 @@ async function answer(payload) {
   } catch (e) {
     r = { ok: false, error: e.message };
   }
+  if (r?.ok) drafts.delete(id);
   if (r?.ok || current?.ask?.id !== id) return; // the app has already moved the card on
   $("askErr").textContent = r?.error || "Couldn't send that.";
   $("askErr").hidden = false;
@@ -230,23 +235,26 @@ $("always").addEventListener("click", () => answer({ behavior: "always" }));
 $("deny").addEventListener("click", () => answer({ behavior: "deny" }));
 const toTerminal = () => current?.ask && view === "open" && J.card("defer", current.ask.id);
 $("terminal").addEventListener("click", toTerminal);
-// Reply from the notch: turn this done line into a reply box for its session. The island keeps
-// the line's colour (no amber); sending goes through the same checked path as question replies.
+// Reply from the notch: ask the app to show this line's reply as the card. It comes back like a
+// question (same checked answer path) but without the amber pulse, with ‹ › to the others waiting.
 $("replyBtn").addEventListener("click", (e) => {
   e.stopPropagation();
   if (!current?.reply) return;
   pointerEntered();
-  current = { ...current, ask: { id: current.reply.id, kind: "reply", expiresAt: current.reply.expiresAt, canDictate: Boolean(current.reply.canDictate) } };
-  $("replyBtn").hidden = true;
-  showAsk(current);
-  setView("open", true);
-  // You clicked Reply, so the box may take the keyboard (same request the box itself makes on click).
-  requestAnimationFrame(async () => {
-    reportSize();
-    await J.card("focus", true);
-    box.focus();
-  });
+  openNext = true;
+  J.card("reply", current.reply.id); // the app sends this reply back as the card, with ‹ › to the others
 });
+
+// ‹ › : step through every session waiting on you (questions first). Answers stay tied to the one shown.
+function navStep(dir) {
+  if (!current?.ask || !(current.total > 1)) return;
+  pointerEntered();
+  openNext = true;
+  J.card("nav", dir);
+}
+$("navPrev").addEventListener("click", (e) => (e.stopPropagation(), navStep(-1)));
+$("navNext").addEventListener("click", (e) => (e.stopPropagation(), navStep(1)));
+box.addEventListener("input", () => current?.ask && drafts.set(current.ask.id, box.value));
 $("replyTerminal").addEventListener("click", toTerminal);
 
 // ---------- voice replies ----------
@@ -328,6 +336,10 @@ box.addEventListener("blur", () => {
   schedule();
 });
 box.addEventListener("keydown", (e) => {
+  if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    e.preventDefault();
+    return navStep(e.key === "ArrowLeft" ? -1 : 1);
+  }
   if (e.key === "Escape") {
     e.preventDefault();
     box.blur();
@@ -349,6 +361,7 @@ function setLogo(el, agentId) {
 function show(c) {
   // A soft reply ended without an answer (timed out, you typed in the terminal, a newer turn).
   if (c.state === "reply-gone") {
+    drafts.delete(c.replyId);
     if (current?.reply?.id !== c.replyId) return;
     current.reply = null;
     $("replyBtn").hidden = true;
@@ -370,9 +383,13 @@ function show(c) {
   const same = current && current.id === c.id && view !== "gone";
   const isAsk = Boolean(c.ask);
   const wasAskId = current?.ask?.id || null;
+  if (wasAskId && box.value.trim() && wasAskId !== c.ask?.id) drafts.set(wasAskId, box.value);
   current = c;
   // A silent "needs you" or error keeps its colour; only the voice is held back.
-  island.className = `island ${c.kind} ${c.state}${isAsk ? " asking" : ""}`;
+  island.className = `island ${c.kind} ${c.state}${isAsk ? " asking" : ""}${c.soft ? " soft" : ""}`;
+  const multi = isAsk && c.total > 1;
+  $("navPrev").hidden = $("navNext").hidden = $("navPos").hidden = !multi;
+  $("navPos").textContent = multi ? `${c.pos} / ${c.total}` : "";
   if (!same) {
     setLogo($("avatar"), c.agentId);
     setLogo($("miniLogo"), c.agentId);
@@ -401,6 +418,13 @@ function show(c) {
     reportSize();
     if (view === "list" && hovering) return; // you're looking at the list; the row has the news
     if (isAsk) {
+      // You asked for this one (Reply, ‹ ›): open it and put the cursor in the box.
+      if (openNext) {
+        openNext = false;
+        setView("open", true);
+        if (!$("reply").hidden) J.card("focus", true).then(() => box.focus());
+        return;
+      }
       // A new question while you have one open: keep it open, re-arm for the new one.
       if (view === "open") return wasAskId !== c.ask.id ? setView("open", true) : undefined;
       return setView("mini", true);

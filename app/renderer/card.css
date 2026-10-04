@@ -186,6 +186,13 @@ body.virtual .rest .gap { display: none; }
 .pill { height: 22px; border: 0; border-radius: 11px; padding: 0 10px; background: rgba(255, 255, 255, 0.14); color: #f5f5f7; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
 .pill:hover { background: rgba(255, 255, 255, 0.22); }
 .island.asking #replyBtn { display: none; }
+/* ‹ › between the sessions waiting on you, and "2 / 4" */
+.nav { width: 22px; height: 22px; flex: none; border: 0; border-radius: 50%; padding: 0; background: rgba(255, 255, 255, 0.12); color: #f5f5f7; display: grid; place-items: center; cursor: pointer; align-self: center; }
+.nav:hover { background: rgba(255, 255, 255, 0.22); }
+.nav svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.navpos { font-size: 11.5px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.6); align-self: center; }
+/* A reply you chose to open (not a waiting question): no amber pulse */
+.island.asking.soft .dot, .island.asking.soft[data-view="mini"] { animation: none; }
 .island:not(.speaking) #stop { display: none; }
 
 /* ----- a question the agent is waiting on ----- */
