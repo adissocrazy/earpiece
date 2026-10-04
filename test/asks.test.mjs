@@ -451,7 +451,7 @@ test("codex hooks.json: add, replace, remove, and leave other hooks alone", () =
 test("earpiece answers on|off installs and removes the blocking hooks for connected agents", () => {
   const h = fakeHome();
   const env = { ...process.env, EARPIECE_HOME: fs.mkdtempSync(path.join(os.tmpdir(), "earpiece-ans-")), HOME: h, EARPIECE_DRY_RUN: "1", EARPIECE_FOREGROUND: "1" };
-  fs.writeFileSync(path.join(env.EARPIECE_HOME, "config.json"), JSON.stringify({ quietHours: null, chimes: false }));
+  fs.writeFileSync(path.join(env.EARPIECE_HOME, "config.json"), JSON.stringify({ quietHours: null, chimes: false, replyFromNotch: false })); // reply hooks: reply.test.mjs
   const run = (...args) => spawnSync(process.execPath, [BIN, ...args], { env, encoding: "utf8" });
   const claudeFile = path.join(h, ".claude", "settings.json");
   const codexHooks = path.join(h, ".codex", "hooks.json");

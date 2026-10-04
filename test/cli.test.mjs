@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "earpiece-cli-"));
-fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ quietHours: null, chimes: false }));
+fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ quietHours: null, chimes: false, replyFromNotch: false }) /* reply hooks: reply.test.mjs */);
 const env = { ...process.env, EARPIECE_HOME: home, EARPIECE_DRY_RUN: "1", EARPIECE_FOREGROUND: "1", HOME: home };
 delete env.SMALLEST_API_KEY;
 delete env.OPENAI_API_KEY;

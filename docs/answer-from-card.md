@@ -41,7 +41,7 @@ Mac app: General → **Answer from the card**. CLI: `earpiece answers on` (needs
 
 ## Reply from the notch
 
-A second switch, General → **Reply from the notch** (`"replyFromNotch": true` in config), puts a small
+A second switch, General → **Reply from the notch** (on by default; `"replyFromNotch": false` in config turns it off), puts a small
 **Reply** pill on every finished line in the notch, not only on questions. Click it, type the next
 instruction, press Enter: the agent carries on in its own terminal. Nothing is typed into the terminal.
 

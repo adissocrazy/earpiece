@@ -87,7 +87,7 @@ const prefs = {
       fs.writeFileSync(this.file(), JSON.stringify(next, null, 2));
       return next;
     }
-    if (!["showInDock", "showCard", "shareStats", "hideSignInNudge"].includes(key)) throw new Error("unknown preference");
+    if (!["showInDock", "showCard", "shareStats", "hideSignInNudge", "replyHooksAdded"].includes(key)) throw new Error("unknown preference");
     const next = { ...this.get(), [key]: Boolean(value) };
     fs.mkdirSync(path.dirname(this.file()), { recursive: true });
     fs.writeFileSync(this.file(), JSON.stringify(next, null, 2));
@@ -290,6 +290,12 @@ async function start() {
       }),
     });
     telemetry.start();
+  }
+  // Reply from the notch is on by default. Agents connected before it existed don't have its Stop
+  // hook yet, so rewrite their hooks once (only those already connected; a preference marks it done).
+  if (lib.config().replyFromNotch && !prefs.get().replyHooksAdded) {
+    for (const id of ["claude-code", "codex"]) if (lib.getAdapter(id)?.isInstalled?.()) connectAgents(id);
+    prefs.set("replyHooksAdded", true);
   }
   syncAccount().then(refresh);
   setInterval(() => syncAccount().then(refresh), 10 * 60_000).unref?.();

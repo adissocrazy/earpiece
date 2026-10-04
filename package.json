@@ -1,6 +1,6 @@
 {
   "name": "earpiece",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A voice hub for terminal coding agents. Claude Code, Codex CLI and any other agent tell you out loud when they finish or need you.",
   "type": "module",
   "bin": {

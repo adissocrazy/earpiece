@@ -242,3 +242,26 @@ test("codex install: Reply from the notch installs the Stop hook even with Answe
     os.homedir = old;
   }
 });
+
+test("CLI `earpiece reply` (hooks installed without the app) behaves like the shim: exit 2 + stderr, else 0", async () => {
+  const asks = createAsks();
+  asks.setUi(true);
+  const hub = await startHubServer({ asks });
+  updateConfig({ replyFromNotch: true });
+  try {
+    const child = spawn(process.execPath, [BIN, "reply", "claude-code"], { env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (c) => (err += c));
+    child.stdin.end(JSON.stringify(DONE));
+    assert.ok(await waitFor(() => asks.size() === 1));
+    asks.answer(asks.list()[0].id, { text: "run the linter" });
+    assert.equal(await new Promise((res) => child.once("exit", res)), 2);
+    assert.equal(err.trim(), "The user replied from the Earpiece card: run the linter");
+  } finally {
+    updateConfig({ replyFromNotch: false });
+    await hub.close();
+  }
+  const none = spawnSync(process.execPath, [BIN, "reply", "claude-code"], { env: process.env, input: JSON.stringify(DONE), encoding: "utf8", timeout: 10000 });
+  assert.equal(none.status, 0, "no hub: nothing happens");
+  assert.equal(none.stderr, "");
+});

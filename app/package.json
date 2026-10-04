@@ -1,7 +1,7 @@
 {
   "name": "earpiece-app",
   "productName": "Earpiece",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Mac app for earpiece: spoken pings for your coding agents, no terminal needed.",
   "type": "module",

@@ -24,6 +24,7 @@
 | `maxChars` | `200` | longer lines are cut to their first sentence |
 | `quietHours` | `{"start":"23:00","end":"08:00","allow":["needs_input"]}` | nightly window. Only kinds in `allow` are spoken: `[]` is completely silent, `["needs_input","error"]` also lets failures through. `null` turns quiet hours off. Set it with `earpiece quiet-hours` |
 | `chimes` | `true` | macOS system sound before each line |
+| `replyFromNotch` | `true` | a Reply on every finished line in the notch (Claude Code: non-blocking asyncRewake Stop hook, 30 min; Codex: held 60 s, only while you're away from its terminal). Needs the Mac app and the card on. General switch. See [answer-from-card.md](answer-from-card.md#reply-from-the-notch) |
 | `answerFromCard` | `false` | let the floating card approve, deny or reply to Claude Code and Codex. Installs blocking `PermissionRequest` and `Stop` hooks; needs the Mac app and the card on. Set it with `earpiece answers on\|off` or the General switch. See [answer-from-card.md](answer-from-card.md) |
 | `announceAgent` | `false` | prefix lines with the agent name |
 | `agents` | `{}` | per-agent overrides, below |

@@ -6,7 +6,7 @@ import http from "node:http";
 import path from "node:path";
 import { getAdapter, listAdapters } from "../adapters/index.mjs";
 import { agentConfig, apiKey, config, updateConfig } from "../config.mjs";
-import { ASK_CURL_TIMEOUT_SEC } from "../hub/asks.mjs";
+import { ASK_CURL_TIMEOUT_SEC, REPLY_CURL_TIMEOUT_SEC } from "../hub/asks.mjs";
 import { EVENT_TYPES, normalizeEvent } from "../hub/events.mjs";
 import { handleCodex } from "../hub/entry.mjs";
 import { ingest, ingestEvent, runWorker } from "../hub/hub.mjs";
@@ -447,13 +447,13 @@ function cmdInstall(rest, uninstall = false) {
     console.log(`\n  No \`earpiece\` on PATH yet. Either \`npm link\` in ${ROOT}, or:\n  alias earpiece='node "${BIN}"'`);
 }
 
-// POST the hook payload to the hub and print whatever it answers. Never throws, never fails the agent.
-async function cmdAsk(agent, raw) {
+// POST a hook payload to a waiting hub route and resolve to its 200 body, or "" (no hub, 204, error).
+function hubWait(route, raw, timeoutSec) {
   const body = raw || "{}";
-  const out = await new Promise((resolve) => {
+  return new Promise((resolve) => {
     if (!fs.existsSync(P.socket)) return resolve("");
     const req = http.request(
-      { socketPath: P.socket, path: `/ask/${encodeURIComponent(agent)}`, method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }, timeout: ASK_CURL_TIMEOUT_SEC * 1000 },
+      { socketPath: P.socket, path: route, method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) }, timeout: timeoutSec * 1000 },
       (res) => {
         let data = "";
         res.setEncoding("utf8");
@@ -466,7 +466,21 @@ async function cmdAsk(agent, raw) {
     req.on("error", () => resolve(""));
     req.end(body);
   });
+}
+
+// Blocking hook: print whatever the hub answers. Never throws, never fails the agent.
+async function cmdAsk(agent, raw) {
+  const out = await hubWait(`/ask/${encodeURIComponent(agent)}`, raw, ASK_CURL_TIMEOUT_SEC);
   if (out) process.stdout.write(out);
+}
+
+// Claude Code's asyncRewake Stop hook (Reply from the notch), same as the shim's `reply`: a reply
+// from the card goes to stderr with exit 2, which wakes the session; anything else exits 0 silently.
+async function cmdReply(agent, raw) {
+  const out = await hubWait(`/reply/${encodeURIComponent(agent)}`, raw, REPLY_CURL_TIMEOUT_SEC);
+  if (!out) return;
+  process.stderr.write(`${out}\n`);
+  process.exitCode = 2;
 }
 
 // Turn "answer from the card" on or off, then rewrite the agents' hooks to match.
@@ -540,6 +554,10 @@ export async function main(argv) {
       // with none running it prints nothing and the agent's own prompt carries on.
       const agent = rest[0] && !rest[0].startsWith("-") ? rest[0] : "claude-code";
       return cmdAsk(agent, await readStdin());
+    }
+    case "reply": {
+      const agent = rest[0] && !rest[0].startsWith("-") ? rest[0] : "claude-code";
+      return cmdReply(agent, await readStdin());
     }
     case "answers":
       return cmdAnswers(rest);
@@ -621,7 +639,7 @@ export async function main(argv) {
 
 // Shared by every entry file. Hook paths never fail the agent because of a voice problem.
 export function run(argv = process.argv.slice(2)) {
-  const hookPath = ["hook", "ask", "codex", "_worker"].includes(argv[0]);
+  const hookPath = ["hook", "ask", "reply", "codex", "_worker"].includes(argv[0]);
   return main(argv).catch((e) => {
     log({ error: String(e?.stack || e), cmd: argv[0] });
     if (hookPath) process.exitCode = 0;

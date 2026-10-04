@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 (2026-10-04)
 
-- **Reply from the notch** (General, off by default). A Reply pill on every finished line in the notch: type the next instruction and the agent carries on in its own terminal. Claude Code uses a non-blocking asyncRewake Stop hook (up to 30 minutes, the terminal is never held); Codex holds its Stop hook for 60 seconds, only while you are away from its terminal. See [docs/answer-from-card.md](docs/answer-from-card.md#reply-from-the-notch).
+- **Reply from the notch** (General, on by default; existing connected agents get the new hook once on the first launch). A Reply pill on every finished line in the notch: type the next instruction and the agent carries on in its own terminal. Claude Code uses a non-blocking asyncRewake Stop hook (up to 30 minutes, the terminal is never held); Codex holds its Stop hook for 60 seconds, only while you are away from its terminal. See [docs/answer-from-card.md](docs/answer-from-card.md#reply-from-the-notch).
 - **Voice replies.** A mic in the notch's reply box: tap, speak, tap again. Your words land in the box and you press Send. Works with Earpiece Pro (hosted speech-to-text) or your own OpenAI key. macOS asks for microphone access the first time.
-- Fix: the uninstaller now recognises every hook Earpiece writes, including the new reply hook.
+- Fix: the uninstaller now recognises every hook Earpiece writes, including the new reply hook, and hooks installed from the CLI (`earpiece install`) support replies too.
 
 ## 0.4.1 (2026-10-03)
 
