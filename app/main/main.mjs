@@ -447,6 +447,10 @@ const restIcon = () => prefs.get().showCard !== false && prefs.get().notchIcon !
 
 function createCardWin() {
   cardWin = new BrowserWindow({
+    // macOS "panel" (a non-activating NSPanel style mask): floats over full-screen apps and joins
+    // every Space without turning Earpiece into a Dock-less agent app, and clicking it doesn't pull
+    // focus away from the app you're in.
+    type: process.platform === "darwin" ? "panel" : undefined,
     width: CARD_W,
     height: CARD_H,
     show: false,
@@ -474,7 +478,8 @@ function createCardWin() {
   // "status" is above the menu bar, so the island can sit over it, in the notch.
   cardWin.setAlwaysOnTop(true, "status");
   cardWin.setHiddenInMissionControl?.(true);
-  // skipTransformProcessType keeps the Dock icon; without it macOS turns us into an agent app.
+  // The panel type above is what lets it show over full-screen apps; this keeps it on every Space.
+  // skipTransformProcessType keeps the Dock icon (otherwise macOS briefly turns us into an agent app).
   cardWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   cardWin.setIgnoreMouseEvents(true, { forward: true });
   cardWin.loadFile(path.join(APP_ROOT, "renderer", "card.html"));

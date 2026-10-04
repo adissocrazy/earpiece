@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: the notch card now shows over full-screen apps (Cursor, VS Code, a full-screen terminal). It is a macOS panel window, so it joins every Space without hiding the Dock icon, and clicking it no longer pulls focus from the app you are in.
+
 ## 0.4.2 (2026-10-04)
 
 - **Reply from the notch** (General, on by default; existing connected agents get the new hook once on the first launch). A Reply pill on every finished line in the notch: type the next instruction and the agent carries on in its own terminal. Claude Code uses a non-blocking asyncRewake Stop hook (up to 30 minutes, the terminal is never held); Codex holds its Stop hook for 60 seconds, only while you are away from its terminal. See [docs/answer-from-card.md](docs/answer-from-card.md#reply-from-the-notch).
