@@ -19,7 +19,7 @@ import { jumpPlan, jumpTo, resolveTarget } from "../hub/jump.mjs";
 import { listSessions, updateSession } from "../hub/sessions.mjs";
 import { isKnownLang, LANG_NAMES, langLabel, phrase } from "../i18n.mjs";
 import { BIN, HOME, P, ROOT } from "../paths.mjs";
-import { currentMode, inQuietHours, QUIET_ALLOW_DEFAULT, setMode } from "../policy.mjs";
+import { appClosed, currentMode, inQuietHours, QUIET_ALLOW_DEFAULT, setMode } from "../policy.mjs";
 import { ago, ensureDirs, log, now, parseFlags, projectName, readJson, which } from "../util.mjs";
 import { listEngines } from "../voice/engines/index.mjs";
 import { fetchVoices, findVoice } from "../voice/engines/smallest.mjs";
@@ -387,6 +387,7 @@ function cmdStatus() {
     .find((e) => e.spoke);
   const status = {
     mode: currentMode(),
+    appClosed: appClosed(), // true: the Mac app was quit, so hooks stay silent until it opens (or `earpiece on`)
     quietHours: describeQuiet(cfg.quietHours),
     quietHoursNow: inQuietHours(cfg.quietHours),
     engines: cfg.ttsProviders.join(" → "),
@@ -602,6 +603,7 @@ export async function main(argv) {
     }
     case "on":
       setMode("on");
+      fs.rmSync(P.appClosed, { force: true }); // also undoes a Quit of the Mac app
       return console.log("earpiece: on");
     case "status":
       return cmdStatus();

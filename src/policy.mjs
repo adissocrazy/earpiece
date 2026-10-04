@@ -1,4 +1,5 @@
 // When Earpiece is allowed to talk: modes (on / quiet / off) and quiet hours.
+import fs from "node:fs";
 import { P } from "./paths.mjs";
 import { now, readJson, writeJson } from "./util.mjs";
 
@@ -28,8 +29,14 @@ export function setMode(mode, minutes = 0) {
 export const QUIET_ALLOW_DEFAULT = ["needs_input"];
 export const quietAllows = (qh, kind) => (Array.isArray(qh?.allow) ? qh.allow : QUIET_ALLOW_DEFAULT).includes(kind);
 
+// The Mac app writes this on Quit and removes it on launch: quitting Earpiece means Earpiece is off.
+// Hooks that fire meanwhile still update the session list, but nothing is spoken or summarised.
+// CLI-only installs (no app) never have it. `earpiece on` clears it.
+export const appClosed = () => fs.existsSync(P.appClosed);
+
 // Returns a skip reason, or null if this kind of line may be spoken now.
 export function policyBlock(kind, cfg, d = new Date()) {
+  if (appClosed()) return "app_closed";
   const mode = currentMode();
   if (mode === "off") return "mode_off";
   // Quiet: nothing is spoken or chimed. Every line still shows on the card, tagged "Quiet".

@@ -112,3 +112,11 @@ Earpiece checks GitHub for a newer release a few seconds after it starts and eve
 The banner offers **Download** instead (the disk image, to drag to Applications yourself) when Earpiece can't replace itself: it is running from the disk image or from a temporary copy macOS made because it was never moved to Applications, its folder isn't writable, or the release has no checksum. Drafts and pre-releases are ignored.
 
 Because the app is not Developer ID signed, macOS may ask again for permissions you gave the old copy, such as Automation.
+
+## Quitting
+
+Quit (menu bar → Quit, or ⌘Q) turns Earpiece off. The line that is playing stops, the queue and its
+background workers are cleared, and `~/.earpiece/app-closed.json` is written. While it exists, agent
+hooks still update the session list, so Overview is right when you come back, but nothing is spoken
+and nothing is sent for a summary (the log says `skipped: app_closed`). Opening the app removes it;
+so does `earpiece on`. `earpiece status` shows `appClosed: true` while it's in place.

@@ -1,5 +1,6 @@
 // Turn an agent's final message into one spoken sentence, in the configured language.
 import { apiKey } from "../config.mjs";
+import { appClosed } from "../policy.mjs";
 import { hosted, proToken } from "../pro.mjs";
 import { langInstruction, SCRIPT } from "../i18n.mjs";
 import { isDry, log, plainFirstSentence, redact } from "../util.mjs";
@@ -35,7 +36,8 @@ export async function summarize(text, cfg, { fetch = globalThis.fetch } = {}) {
   text = redact(text); // secrets never leave the machine, even for a summary
   const fallback = { line: plainFirstSentence(text) || "Finished.", via: "first-sentence", lang: "en" };
   // "none": nothing leaves the machine; speak the agent's own first sentence.
-  if (isDry() || !text || cfg.summaryProvider === "none") return fallback;
+  // App quit: nothing will be spoken, so nothing is sent anywhere either.
+  if (isDry() || !text || cfg.summaryProvider === "none" || appClosed()) return fallback;
   const lang = cfg.speakLanguage || "en";
   // Pro: Earpiece's hosted summary first (same prompt, on Earpiece's key), then the user's own.
   if (proToken()) {

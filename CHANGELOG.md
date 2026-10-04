@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Quitting Earpiece turns it off.** Quit stops the line that is playing and clears the queue and its background workers. Until you open the app again, agent hooks only keep the session list up to date: nothing is spoken, and nothing is sent for a summary. `earpiece status` shows `appClosed`; `earpiece on` also clears it. CLI-only installs (no Mac app) are unchanged.
 - **‹ › between waiting sessions.** When more than one agent is waiting on you (questions, permission requests, open Replies), the notch card shows ‹ and › with a "2 / 4" counter to step between them (⌥← / ⌥→ in the reply box). Questions come first, oldest first, then replies, newest first. Half-typed replies are kept per session, and answers still only go to the session on screen.
 - Fix: the notch card now shows over full-screen apps (Cursor, VS Code, a full-screen terminal). It is a macOS panel window, so it joins every Space without hiding the Dock icon, and clicking it no longer pulls focus from the app you are in.
 

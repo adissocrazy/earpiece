@@ -233,6 +233,7 @@ async function start() {
   ]);
   lib = { ...paths, ...server, ...sessions, ...policy, ...config, ...adapters, ...control, ...shim, ...util, ...cards, ...askLib, ...originLib, ...jumpLib, ...notchLib };
   lib.ensureDirs();
+  fs.rmSync(lib.P.appClosed, { force: true }); // open again: Earpiece is back on
 
   // Re-written on every launch, so hooks keep working if the app is moved.
   const shimOpts = { fallback: [process.execPath, path.join(CORE, "bin", "earpiece.mjs")], env: { ELECTRON_RUN_AS_NODE: "1" } };
@@ -1185,6 +1186,14 @@ ipcMain.handle("dash", async (e, name, args) => {
 
 app.on("activate", () => showMain()); // dock icon clicked
 app.on("before-quit", async (e) => {
+  // Quit means Earpiece is off: stop the line playing, drop the queue and its workers, and leave a
+  // marker so hooks that fire while the app is closed speak (and summarise) nothing.
+  if (!quitting && lib.P) {
+    try {
+      lib.stopSpeaking();
+      lib.writeJson(lib.P.appClosed, { at: Date.now() });
+    } catch {}
+  }
   quitting = true;
   if (!hub) return;
   e.preventDefault();
