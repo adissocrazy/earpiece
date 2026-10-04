@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld("earpiece", {
   // Floating card window only.
   card: (action, value) => ipcRenderer.invoke("card", action, value),
   answer: (id, answer) => ipcRenderer.invoke("ask-answer", id, answer),
+  // Voice replies: "start" checks the mic permission; "transcribe" turns a recorded clip into text.
+  dictate: (action, bytes, mime) => ipcRenderer.invoke("dictate", action, bytes, mime),
   previewCard:() => ipcRenderer.invoke("card-preview"),
   onCard: (cb) => {
     const h = (_e, c) => cb(c);

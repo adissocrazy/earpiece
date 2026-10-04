@@ -148,7 +148,7 @@ function schedule() {
 }
 
 function foldIfIdle() {
-  if (hovering || busy || document.activeElement === box || (current?.ask && box.value.trim())) return;
+  if (hovering || busy || rec || transcribing || document.activeElement === box || (current?.ask && box.value.trim())) return;
   setView(current?.brief ? idle() : "mini");
 }
 
@@ -193,6 +193,7 @@ function showAsk(c) {
   $("choices").hidden = !perm;
   $("always").hidden = !a.canAlways;
   $("reply").hidden = perm;
+  $("mic").hidden = perm || !a.canDictate;
   box.value = "";
   box.placeholder = `Reply to ${c.agentName || "the agent"}…  (Enter to send, Shift+Enter for a new line)`;
   $("askErr").hidden = !a.partial;
@@ -201,6 +202,7 @@ function showAsk(c) {
 }
 
 function hideAsk() {
+  stopDictation(true);
   $("ask").hidden = true;
   clearTimeout(armTimer);
   if (document.activeElement === box) box.blur();
@@ -234,7 +236,7 @@ $("replyBtn").addEventListener("click", (e) => {
   e.stopPropagation();
   if (!current?.reply) return;
   pointerEntered();
-  current = { ...current, ask: { id: current.reply.id, kind: "reply", expiresAt: current.reply.expiresAt } };
+  current = { ...current, ask: { id: current.reply.id, kind: "reply", expiresAt: current.reply.expiresAt, canDictate: Boolean(current.reply.canDictate) } };
   $("replyBtn").hidden = true;
   showAsk(current);
   setView("open", true);
@@ -246,6 +248,72 @@ $("replyBtn").addEventListener("click", (e) => {
   });
 });
 $("replyTerminal").addEventListener("click", toTerminal);
+
+// ---------- voice replies ----------
+// Tap the mic to record, tap again to stop (60 s at most). The clip is turned into text by the app
+// (Earpiece Pro, or your own OpenAI key) and lands in the box. Nothing is sent until you press Send.
+const MAX_REC_MS = 60_000;
+let rec = null; // { recorder, stream, timer }
+let transcribing = false;
+
+function replyError(msg) {
+  $("askErr").textContent = msg || "Something went wrong.";
+  $("askErr").hidden = false;
+  reportSize();
+}
+
+async function startDictation() {
+  if (rec || transcribing || !current?.ask) return;
+  $("askErr").hidden = true;
+  const ok = await J.dictate("start");
+  if (!ok?.ok) return replyError(ok?.error);
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    return replyError("Couldn't open the microphone.");
+  }
+  const chunks = [];
+  const recorder = new MediaRecorder(stream, MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus" } : undefined);
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    $("mic").classList.remove("recording");
+    if (recorder.cancelled || !chunks.length) return;
+    transcribing = true;
+    $("mic").classList.add("busy");
+    const type = (recorder.mimeType || "audio/webm").split(";")[0];
+    const r = await J.dictate("transcribe", new Uint8Array(await new Blob(chunks, { type }).arrayBuffer()), type);
+    transcribing = false;
+    $("mic").classList.remove("busy");
+    if (!r?.ok) return replyError(r?.error);
+    if (r.text) box.value = box.value.trim() ? `${box.value.trimEnd()} ${r.text}` : r.text;
+    await J.card("focus", true); // you tapped the mic, so the box may take the keyboard to review and send
+    box.focus();
+    reportSize();
+  };
+  recorder.start();
+  rec = { recorder, stream, timer: setTimeout(() => stopDictation(false), MAX_REC_MS) };
+  $("mic").classList.add("recording");
+  $("mic").title = "Stop recording";
+}
+
+function stopDictation(cancel) {
+  if (!rec) return;
+  const r = rec;
+  rec = null;
+  clearTimeout(r.timer);
+  $("mic").title = "Speak your reply (it lands in the box; you press Send)";
+  if (cancel) r.recorder.cancelled = true;
+  if (r.recorder.state !== "inactive") r.recorder.stop();
+  else r.stream.getTracks().forEach((t) => t.stop());
+}
+
+$("mic").addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (rec) stopDictation(false);
+  else startDictation();
+});
 
 // The island never takes the keyboard on its own. Clicking into the box makes it focusable;
 // the app gives the keyboard back to your terminal when the box is done with.

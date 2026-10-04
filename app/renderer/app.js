@@ -953,7 +953,7 @@ function general() {
       ),
       row(
         "Reply from the notch",
-        "A Reply button on every finished line, not only questions: type the next instruction and the agent carries on in its own terminal. Claude Code: for up to 30 minutes, without holding the terminal. Codex: for a minute, and only while you're away from its terminal. Restart open sessions after changing it; in Codex, trust the new hooks once with /hooks.",
+        "A Reply button on every finished line, not only questions: type the next instruction and the agent carries on in its own terminal. Claude Code: for up to 30 minutes, without holding the terminal. Codex: for a minute, and only while you're away from its terminal. Tap the mic to speak instead (Earpiece Pro, or your own OpenAI key); the words land in the box and you press Send. Restart open sessions after changing it; in Codex, trust the new hooks once with /hooks.",
         sw(P.replyFromNotch && P.showCard, (v) => setPref("replyFromNotch", v), "Reply from the notch"),
       ),
       D.account?.user

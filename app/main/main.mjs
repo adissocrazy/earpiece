@@ -2,7 +2,7 @@
 // bar popover for quick control. Hooks send events to ~/.earpiece/hub.sock through the earpiece-hook shim; this process
 // summarises and speaks them. The Node core in ../../src (Resources/core when packaged) does
 // the work, so the app and the `earpiece` CLI always behave the same.
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -588,7 +588,39 @@ function deliverCard(payload) {
 // The soft reply (Reply from the notch) waiting on this line's session, as the card needs it.
 function replyFor(agent, session) {
   const r = (asks?.list() || []).find((a) => a.soft && a.agent === agent && a.session === session);
-  return r ? { id: r.id, expiresAt: r.expiresAt } : null;
+  return r ? { id: r.id, expiresAt: r.expiresAt, canDictate: canDictate() } : null;
+}
+
+// ---------- voice replies ----------
+// The mic in the card's reply box records a short clip; it becomes text in the box, and you send it.
+// Pro: Earpiece's hosted speech-to-text. Free: your own OpenAI key. Neither: no mic.
+const canDictate = () => plan?.plan === "pro" || Boolean(lib.apiKey?.(lib.config(), "OPENAI_API_KEY"));
+
+async function transcribe(bytes, mime) {
+  const type = /^audio\/[\w.+-]+/.exec(String(mime || ""))?.[0] || "audio/webm";
+  const audio = Buffer.from(bytes || []);
+  if (audio.length < 500) throw new Error("Didn't catch that. Hold the mic a little longer.");
+  if (audio.length > 2_000_000) throw new Error("That clip is too long.");
+  if (plan?.plan === "pro") {
+    const token = await auth.accessToken();
+    const res = await fetch(`${SUPABASE}/functions/v1/stt`, {
+      method: "POST",
+      headers: { apikey: KEY, Authorization: `Bearer ${token}`, "Content-Type": type },
+      body: audio,
+      signal: AbortSignal.timeout(30_000),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) return String(j.text || "");
+    if (!lib.apiKey(lib.config(), "OPENAI_API_KEY")) throw new Error(j.error || "Voice replies are unavailable right now.");
+  }
+  const key = lib.apiKey(lib.config(), "OPENAI_API_KEY");
+  if (!key) throw new Error("Voice replies need Earpiece Pro or an OpenAI key.");
+  const form = new FormData();
+  form.append("file", new Blob([audio], { type }), `reply.${type.includes("wav") ? "wav" : type.includes("mp4") ? "m4a" : "webm"}`);
+  form.append("model", "gpt-4o-mini-transcribe");
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form, signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`Couldn't transcribe that (HTTP ${res.status}).`);
+  return String((await res.json()).text || "");
 }
 
 let lastLine = null; // { c, at }: the last done line shown, so a soft reply opened just after it can join it
@@ -645,7 +677,7 @@ function askPayload(list) {
     project: a.project || null,
     more: list.length - 1,
     at: a.at,
-    ask: { id: a.id, kind: a.kind, tool: a.tool || null, detail: a.detail || "", why: a.why || "", canAlways: Boolean(a.canAlways), alwaysRule: a.alwaysRule || "", partial: Boolean(a.partial), expiresAt: a.expiresAt },
+    ask: { id: a.id, kind: a.kind, tool: a.tool || null, detail: a.detail || "", why: a.why || "", canAlways: Boolean(a.canAlways), alwaysRule: a.alwaysRule || "", partial: Boolean(a.partial), expiresAt: a.expiresAt, canDictate: canDictate() },
   };
 }
 
@@ -1046,6 +1078,32 @@ ipcMain.handle("card", (e, action, value) => {
 });
 // The card's answer to a question. Only the card window may send it, and the shape is checked
 // again in asks.answer() (unknown id, "always" when it isn't offered, empty reply).
+// Only the card may use the microphone, and only for the reply box. Everything else is denied
+// (Electron would otherwise grant any permission a page asks for).
+function guardPermissions() {
+  const allow = (wc, permission, details) => permission === "media" && wc === cardWin?.webContents && !(details?.mediaTypes || []).includes("video");
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(allow(wc, permission, details)));
+  session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details) => allow(wc, permission, { mediaTypes: details?.mediaType ? [details.mediaType] : [] }));
+}
+app.whenReady().then(guardPermissions);
+
+ipcMain.handle("dictate", async (e, action, bytes, mime) => {
+  if (!cardWin || e.sender !== cardWin.webContents) return { ok: false, error: "not available" };
+  if (action === "start") {
+    if (!canDictate()) return { ok: false, error: "Voice replies need Earpiece Pro or an OpenAI key." };
+    const granted = process.platform !== "darwin" || systemPreferences.getMediaAccessStatus("microphone") === "granted" || (await systemPreferences.askForMediaAccess("microphone"));
+    return granted ? { ok: true } : { ok: false, error: "Allow the microphone for Earpiece in System Settings → Privacy & Security → Microphone." };
+  }
+  if (action === "transcribe") {
+    try {
+      return { ok: true, text: (await transcribe(bytes, mime)).trim() };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+  return { ok: false, error: "unknown action" };
+});
+
 ipcMain.handle("ask-answer", (e, id, answer) => {
   if (!cardWin || e.sender !== cardWin.webContents || !asks) return { ok: false, error: "not available" };
   const ask = asks.get(String(id));

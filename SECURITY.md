@@ -16,6 +16,10 @@ The Mac app sends usage stats a few times a day so we can tell how many people u
 
 With a Pro plan, Earpiece's own keys replace yours. Before anything is sent it is redacted the same way (see below). The tail of the agent's final message (up to 6,000 characters) goes to Earpiece's `summarize` function, which asks Earpiece's AI provider for one sentence, and that sentence (up to 400 characters) goes to the `tts` function, which asks Earpiece's voice provider for the audio. Both run on Supabase; their code is in [`supabase/functions/`](supabase/functions/). They don't store the text: only a count of lines, characters and summaries per user per month, for the 3,000-line monthly cap. When a call fails, is over the cap, or you aren't Pro, Earpiece falls back to your own keys or the system voice. The Mac app keeps a short-lived access token in `~/.earpiece/account.json` (mode 0600) so the hub can make these calls; signing out deletes it.
 
+## Voice replies
+
+With Reply from the notch on, the mic in the notch's reply box records only while it's red (60 seconds at most). The clip goes to Earpiece's `stt` function (Pro) or straight to OpenAI with your own key (Free), comes back as text in the box, and is sent to the agent only when you press Send. Clips aren't stored; Pro only counts how many were transcribed each month.
+
 ## Payments
 
 Earpiece Pro is sold through Dodo Payments (merchant of record): checkout and the billing portal open in your browser on Dodo's pages, and Earpiece never sees your card. The `billing` function creates the checkout with your account id attached; Dodo's signed webhook (`dodo-webhook`, Standard Webhooks signature checked) updates your plan. Only the plan, its status, renewal date and Dodo's customer and subscription ids are stored.

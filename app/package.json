@@ -21,19 +21,54 @@
   },
   "build": {
     "appId": "dev.earpiece.mac",
-    "protocols": [{ "name": "Earpiece", "schemes": ["earpiece"] }],
+    "protocols": [
+      {
+        "name": "Earpiece",
+        "schemes": [
+          "earpiece"
+        ]
+      }
+    ],
     "productName": "Earpiece",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main/**", "preload/**", "renderer/**", "build/tray*.png", "package.json"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main/**",
+      "preload/**",
+      "renderer/**",
+      "build/tray*.png",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "../src", "to": "core/src" },
-      { "from": "../bin", "to": "core/bin" },
-      { "from": "../package.json", "to": "core/package.json" }
+      {
+        "from": "../src",
+        "to": "core/src"
+      },
+      {
+        "from": "../bin",
+        "to": "core/bin"
+      },
+      {
+        "from": "../package.json",
+        "to": "core/package.json"
+      }
     ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["universal"] },
-        { "target": "zip", "arch": ["universal"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
@@ -42,10 +77,14 @@
       "gatekeeperAssess": false,
       "extendInfo": {
         "NSHumanReadableCopyright": "MIT License",
-        "NSAppleEventsUsageDescription": "Earpiece brings forward the iTerm2 or Terminal tab your agent is running in when you click its card."
+        "NSAppleEventsUsageDescription": "Earpiece brings forward the iTerm2 or Terminal tab your agent is running in when you click its card.",
+        "NSMicrophoneUsageDescription": "Earpiece uses the microphone only while you hold the mic button in the notch, to turn your spoken reply to an agent into text."
       }
     },
-    "dmg": { "sign": false, "title": "Earpiece" },
+    "dmg": {
+      "sign": false,
+      "title": "Earpiece"
+    },
     "publish": null
   }
 }
