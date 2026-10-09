@@ -24,7 +24,6 @@ contextBridge.exposeInMainWorld("earpiece", {
   },
   // Floating card window only.
   card: (action, value) => ipcRenderer.invoke("card", action, value),
-  answer: (id, answer) => ipcRenderer.invoke("ask-answer", id, answer),
   // Voice replies: "start" checks the mic permission; "transcribe" turns a recorded clip into text.
   dictate: (action, bytes, mime) => ipcRenderer.invoke("dictate", action, bytes, mime),
   previewCard:() => ipcRenderer.invoke("card-preview"),
@@ -52,6 +51,18 @@ contextBridge.exposeInMainWorld("earpiece", {
     const h = (_e, a) => cb(a);
     ipcRenderer.on("card-agents", h);
     return () => ipcRenderer.off("card-agents", h);
+  },
+  // The panel's "Needs you" list ({ needs, older, finished }), and a request to open the panel
+  // ({ focus }: an item id or null), from ⌥⌘I, the menus or Talk.
+  onInbox: (cb) => {
+    const h = (_e, l) => cb(l);
+    ipcRenderer.on("card-inbox", h);
+    return () => ipcRenderer.off("card-inbox", h);
+  },
+  onPanel: (cb) => {
+    const h = (_e, m) => cb(m);
+    ipcRenderer.on("card-panel", h);
+    return () => ipcRenderer.off("card-panel", h);
   },
   onRest: (cb) => {
     const h = (_e, on) => cb(on);

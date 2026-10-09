@@ -56,16 +56,58 @@ function ruleLabel(sug) {
   return clip(redact(parts.join(", ")).replace(INVISIBLE, ""), 140);
 }
 
+const MAX_QUESTIONS = 4;
+const MAX_OPTIONS = 9;
+const HIDDEN = new RegExp(INVISIBLE.source); // no g flag: .test() must not keep state
+const tidy = (s, n) => clip(redact(String(s ?? "")).replace(INVISIBLE, ""), n);
+
+/**
+ * Claude Code's AskUserQuestion arrives as a PermissionRequest; its questions and options, cleaned
+ * for the card. Labels are kept whole (they are the answer sent back), so long ones drop the ask.
+ */
+export function questionsOf(p) {
+  if (p?.tool_name !== "AskUserQuestion" || !Array.isArray(p.tool_input?.questions)) return null;
+  const out = [];
+  for (const q of p.tool_input.questions.slice(0, MAX_QUESTIONS)) {
+    if (typeof q?.question !== "string" || !Array.isArray(q.options)) return null;
+    const options = q.options.slice(0, MAX_OPTIONS).map((o) => ({ label: String(o?.label ?? ""), description: tidy(o?.description, 200) }));
+    if (!options.length || options.some((o) => !o.label || o.label.length > 200 || HIDDEN.test(o.label))) return null;
+    out.push({ question: q.question, text: tidy(q.question, 300), header: tidy(q.header, 40), multiSelect: Boolean(q.multiSelect), options });
+  }
+  return out.length ? out : null;
+}
+
 /**
  * A PermissionRequest payload → an ask, or null.
  * @param {{ alwaysAllow?: boolean }} opts alwaysAllow: this agent accepts updatedPermissions (Codex doesn't yet)
  */
 export function permissionAsk(agent, p, { alwaysAllow = true } = {}) {
   if (!p?.tool_name) return null;
+  // Codex sends this for approval_policy = never (Full access). It still runs the hook for MCP calls,
+  // but nobody needs to decide, so stay silent and let it carry on.
+  if (p.permission_mode === "bypassPermissions") return null;
   const tool = clip(String(p.tool_name).replace(INVISIBLE, ""), 60);
   const { text: detail, partial } = elide(rawDetail(p.tool_input));
   const why = typeof p.tool_input?.description === "string" ? clip(redact(p.tool_input.description).replace(INVISIBLE, ""), 160) : "";
   const always = alwaysAllow && !partial ? alwaysOf(p) : null;
+  const questions = questionsOf(p);
+  if (questions)
+    return {
+      kind: "permission",
+      agent,
+      session: String(p.session_id || "unknown"),
+      cwd: p.cwd || null,
+      project: p.cwd ? projectName(p.cwd) : null,
+      tool,
+      // The notch card has no option buttons: it lists them, and Allow lets the terminal ask.
+      detail: questions[0].options.map((o, i) => `${i + 1}. ${o.label}`).join("\n"),
+      why: "",
+      line: questions[0].text,
+      questions,
+      canAlways: false,
+      alwaysRule: "",
+      partial: false,
+    };
   return {
     kind: "permission",
     agent,
@@ -132,6 +174,7 @@ export function permissionOutput(payload, answer, { alwaysAllow = true } = {}) {
 
     decision = s ? { behavior: "allow", updatedPermissions: [s] } : { behavior: "allow" };
   } else if (answer.behavior === "allow") decision = { behavior: "allow" };
+  else if (answer.behavior === "choose") decision = { behavior: "allow", updatedInput: { ...payload.tool_input, answers: answer.answers } };
   else return null;
   return { hookSpecificOutput: { hookEventName: "PermissionRequest", decision } };
 }

@@ -62,7 +62,7 @@ earpiece run -- npm test             # speaks when a long command finishes or fa
 
 Claude Desktop has no hooks, so it relies on Claude choosing to call the tool at the end of real work. It usually does; quick chat replies stay silent on purpose. Quit and reopen Claude Desktop after connecting.
 
-**Answer from the card (Mac app, off by default).** Turn it on under General, or run `earpiece answers on`, and the floating card can approve or deny a Claude Code / Codex tool request, or carry your reply to a question, without switching to the terminal. Nothing is approved without a deliberate click, and unanswered questions fall back to the terminal after about two minutes. See [docs/answer-from-card.md](docs/answer-from-card.md).
+**Answer from the card (Mac app, off by default).** Turn it on under General, or run `earpiece answers on`, and the notch can approve or deny a Claude Code / Codex tool request, or carry your reply to a question, without switching to the terminal. Click the notch (or press ⌥⌘I) for the panel: **Needs you** lists every waiting question and recently finished work, **Agents** lists what is running. Every answer is held 2 seconds so Esc can undo it, and unanswered questions fall back to the terminal after about two minutes. See [docs/answer-from-card.md](docs/answer-from-card.md).
 
 To add first-class support for another agent, write an adapter. It is one small file; see [docs/adapters.md](docs/adapters.md).
 
@@ -109,6 +109,46 @@ earpiece status
 ```
 
 `earpiece where` shows which terminal each of those agents is running in; see [docs/terminal-origin.md](docs/terminal-origin.md).
+
+## Skills & MCP across tools
+
+Claude Code, Codex and Claude Desktop each keep their own MCP servers and skills. `earpiece sync` (or the **Skills & MCP** tab in the Mac app) lists every server and skill against every tool and copies them across:
+
+```
+earpiece sync                         # what each tool is missing (--full for everything)
+earpiece sync mcp exa                 # add the exa server to every tool that lacks it
+earpiece sync skill review --to codex # copy a skill (Codex reads ~/.agents/skills)
+earpiece sync skill --outdated        # update copies that fell behind an edited one
+earpiece sync remove mcp exa --from codex          # or --everywhere; --dry-run to preview
+```
+
+- MCP servers are converted between each tool's format: Codex TOML, Claude Code JSON, and Claude Desktop JSON. Desktop runs remote servers through `mcp-remote`. A server a tool already has is never replaced.
+- Anything that can't be copied faithfully is skipped, with the reason shown. Examples: a working folder (`cwd`), or a shell variable that Claude Desktop can't read.
+- Skills are copied, not linked. Earpiece fingerprints every copy and marks the ones that fell behind; updating moves the old copy to `~/.earpiece/backups/skills/`.
+- Removing an MCP server deletes its entry, backing the file up first. Removing a skill moves its folder to the backups. A symlinked skill is only unlinked, and a folder that another tool links to is kept.
+- Claude Code plugins bundle skills and MCP servers. Both show up, tagged with the plugin name, and both can be copied to Codex or Claude Desktop with the plugin's folder paths filled in. Earpiece never edits or removes a plugin's own files: update or uninstall the plugin for that. The plugin's commands, agents and hooks are not copied.
+- Account-synced skills and symlinked skills are only ever copied out. Earpiece never edits them in place.
+- Every config file is backed up before it changes. `--dry-run` shows what would be written.
+
+## Skill packs
+
+A pack is a named set of skills that installs into every agent at once. Skills can be ones you have installed, folders on disk, or skills in a GitHub repo. Use `earpiece pack` or the **Packs** view in **Skills & MCP**:
+
+```
+earpiece pack create team review ~/work/lint github:acme/skills/skills/deploy
+earpiece pack install team                   # into Claude Code and Codex (--to, --dry-run)
+earpiece pack export team ~/code/team-skills # a folder you can push to GitHub
+earpiece pack install github:acme/team-skills  # shows what's inside; add --yes to install
+earpiece pack                                # list; also show, preview, delete
+```
+
+- A pack from a repo is shown first: every skill, its files, and any scripts. Nothing is copied until you pass `--yes` or click Install. Skills can run code, so read them.
+- Installing goes through the same copy as `earpiece sync`: copies that are already up to date are left alone, and edited ones are backed up first.
+- An installed pack is saved with its source and commit. Installing it again by name fetches the latest version.
+- An export is `earpiece-pack.json` plus `skills/<name>/SKILL.md`, the layout `npx skills` reads. Files that look like secrets (`.env`, `.pem`, `.key`, `id_*`) are left out.
+- Private repos work with your usual git login (SSH key or credential helper). Earpiece never asks for a password.
+
+See [docs/skill-packs.md](docs/skill-packs.md) for the manifest format.
 
 ## A different voice per agent
 

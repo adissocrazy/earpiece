@@ -8,7 +8,7 @@
   --amber: #e89a0c;
   --green: #2f9e57;
   --red: #d8453a;
-  --blue: #2f6fdf;
+  --accent: #0b8f62;
   --bg: rgba(246, 246, 248, 0.82);
 }
 @media (prefers-color-scheme: dark) {
@@ -19,6 +19,7 @@
     --chip: rgba(255, 255, 255, 0.07);
     --chip-on: rgba(255, 255, 255, 0.18);
     --amber: #ffb020;
+    --accent: #3ee0a8;
     --bg: rgba(36, 36, 38, 0.8);
   }
 }
@@ -41,16 +42,14 @@ body {
 .top { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 8px; }
 .title { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
-.wave { display: inline-flex; align-items: center; gap: 2px; height: 14px; }
-.wave i { width: 2.5px; border-radius: 2px; background: var(--fg); height: 40%; }
-.wave i:nth-child(2), .wave i:nth-child(4) { height: 70%; }
-.wave i:nth-child(3) { height: 100%; }
-.wave.on i { animation: bounce 0.9s ease-in-out infinite; }
-.wave.on i:nth-child(2) { animation-delay: 0.1s; }
-.wave.on i:nth-child(3) { animation-delay: 0.2s; }
-.wave.on i:nth-child(4) { animation-delay: 0.3s; }
-.wave.on i:nth-child(5) { animation-delay: 0.4s; }
-@keyframes bounce { 50% { transform: scaleY(0.35); } }
+.mascot { display: inline-flex; width: 18px; height: 18px; }
+.mascot svg { width: 100%; height: 100%; overflow: visible; }
+.ms-pupils { opacity: 0; }
+.mascot.on .ms-sway { transform-box: view-box; transform-origin: 50px 80px; animation: ms-sway 2.4s cubic-bezier(.45,0,.55,1) infinite; }
+.mascot.on .ms-lids { opacity: 0; }
+.mascot.on .ms-pupils { opacity: 1; }
+@keyframes ms-sway { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(5deg); } }
+@media (prefers-reduced-motion: reduce) { .mascot.on .ms-sway { animation: none; } }
 
 .seg { display: inline-flex; background: var(--chip); border-radius: 7px; padding: 2px; }
 .seg button {
@@ -75,7 +74,7 @@ body {
 .row .dot .logo { width: 12px; height: 12px; display: block; }
 .row .dot::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 1.5px var(--bg); }
 .row.waiting .dot::after { background: var(--amber); }
-.row.working .dot::after { background: var(--blue); animation: pulse 1.6s ease-in-out infinite; }
+.row.working .dot::after { background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
 .row.done .dot::after { background: var(--green); }
 .row.error .dot::after { background: var(--red); }
 @keyframes pulse { 50% { opacity: 0.35; } }
@@ -97,7 +96,7 @@ button { font: inherit; color: var(--fg); }
 .icon { letter-spacing: 1px; color: var(--muted); }
 .primary { border: 0; background: var(--fg); color: Canvas; padding: 6px 12px; border-radius: 7px; font-weight: 500; font-size: 12px; }
 .primary:disabled { opacity: 0.5; }
-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .row .age { display: flex; align-items: center; gap: 4px; }
 .done-btn { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; line-height: 18px; opacity: 0; }

@@ -2,7 +2,7 @@
 // bar popover for quick control. Hooks send events to ~/.earpiece/hub.sock through the earpiece-hook shim; this process
 // summarises and speaks them. The Node core in ../../src (Resources/core when packaged) does
 // the work, so the app and the `earpiece` CLI always behave the same.
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen, session, shell, systemPreferences, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, safeStorage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -215,7 +215,7 @@ function migratePrefs() {
 async function start() {
   migratePrefs();
   if (prefs.get().showInDock === false) app.dock?.hide();
-  const [paths, server, sessions, policy, config, adapters, control, shim, util, cards, askLib, originLib, jumpLib, notchLib] = await Promise.all([
+  const [paths, server, sessions, policy, config, adapters, control, shim, util, cards, askLib, originLib, jumpLib, notchLib, syncLib, proLib, packsLib, inboxLib, codexSeenLib] = await Promise.all([
     core("src/paths.mjs"),
     core("src/hub/server.mjs"),
     core("src/hub/sessions.mjs"),
@@ -230,10 +230,17 @@ async function start() {
     core("src/hub/origin.mjs"),
     core("src/hub/jump.mjs"),
     core("src/notch.mjs"),
+    core("src/sync.mjs"),
+    core("src/pro.mjs"),
+    core("src/packs.mjs"),
+    core("src/inbox.mjs"),
+    core("src/codex-seen.mjs"),
   ]);
-  lib = { ...paths, ...server, ...sessions, ...policy, ...config, ...adapters, ...control, ...shim, ...util, ...cards, ...askLib, ...originLib, ...jumpLib, ...notchLib };
+  lib = { ...paths, ...server, ...sessions, ...policy, ...config, ...adapters, ...control, ...shim, ...util, ...cards, ...askLib, ...originLib, ...jumpLib, ...notchLib, ...syncLib, ...proLib, ...packsLib, ...inboxLib, ...codexSeenLib };
+  lib.coreBin = path.join(CORE, "bin", "earpiece.mjs"); // pack work that runs git goes through a child process
   lib.ensureDirs();
   fs.rmSync(lib.P.appClosed, { force: true }); // open again: Earpiece is back on
+  lib.writeJson(lib.P.appPid, { pid: process.pid }); // and gone the moment this process is, however it ends
 
   // Re-written on every launch, so hooks keep working if the app is moved.
   const shimOpts = { fallback: [process.execPath, path.join(CORE, "bin", "earpiece.mjs")], env: { ELECTRON_RUN_AS_NODE: "1" } };
@@ -301,6 +308,8 @@ async function start() {
   syncAccount().then(refresh);
   setInterval(() => syncAccount().then(refresh), 10 * 60_000).unref?.();
   await loadPro();
+  // ⌥⌘I opens the notch panel on "Needs you", from any app.
+  if (!globalShortcut.register(PANEL_KEY, () => openPanel())) lib.log({ error: "panel: shortcut ⌥⌘I is taken" });
   // Started at login: stay in the menu bar. Opened by you: show the window.
   const login = app.getLoginItemSettings();
   if (!(login.wasOpenedAtLogin || login.wasOpenedAsHidden)) showMain();
@@ -343,7 +352,7 @@ function state() {
       status: s.status || "idle",
       updated: s.updated || 0,
       where: s.origin ? lib.describeOrigin(s.origin) : "",
-      run: s.origin?.run || null,
+      run: s.origin?.run || pro?.runOf?.(s) || null,
       // The row already shows the agent and project, so drop them from the spoken line.
       // Once you mark it done, the old question is stale; say so instead.
       lastLine: s.status === "done" && s.markedByUser >= (s.updated || 0) - 5 ? "Marked done by you" : lib.stripLeadIn(s.lastLine || "", { agentName: agent, project }),
@@ -403,9 +412,22 @@ async function loadPro() {
       BrowserWindow,
       lib,
       dir: PRO_DIR,
+      appRoot: APP_ROOT,
       isPro: () => plan?.plan === "pro",
       upgrade: () => (auth.user() ? openBilling({ action: "checkout", interval: "month" }) : showMain("general")),
       sessions: () => state().sessions,
+      asks: () => asks,
+      jump: (agent, session) => jumpToSession(agent, session, { fallback: false }),
+      agentLabel,
+      homeDisplay,
+      notch: () => notchFor(homeDisplay()),
+      openPanel,
+      frontApp,
+      globalShortcut,
+      clipboard,
+      micAccess,
+      // A line read aloud (Talk's answers), under the same rules as every other line (Quiet, Off).
+      say: async (text) => (await core("src/voice/speak.mjs")).speak(String(text).slice(0, 400), "info", { src: "talk" }),
       card: () => (cardWin && cardReady ? cardWin : null),
       main: () => win,
       showMain,
@@ -611,7 +633,38 @@ function sendAgents(s) {
   if (!cardWin || !cardReady) return;
   const st = s || state();
   cardWin.webContents.send("card-agents", { ...lib.notchAgents(st.sessions), mode: st.mode, rest: restIcon(), now: Date.now() });
+  sendInbox();
 }
+
+// The panel's "Needs you" tab. Cleared items live in userData/inbox.json (agent:session → the
+// session's `updated` when you cleared it), so one comes back only once that agent moves on.
+const inboxFile = () => path.join(app.getPath("userData"), "inbox.json");
+const inboxCleared = () => lib.readJson(inboxFile(), {}).cleared || {};
+
+function inboxList(st = state()) {
+  const answered = {}; // a Codex question you already answered in Codex itself
+  for (const s of st.sessions) if (s.agentId === "codex" && s.status === "waiting") answered[`codex:${s.session}`] = lib.codexTurnStarted(s.session);
+  return lib.buildInbox({ asks: asks?.list() || [], sessions: st.sessions, cleared: inboxCleared(), answered, label: agentLabel });
+}
+
+let inboxTimer = null;
+function sendInbox() {
+  clearTimeout(inboxTimer);
+  inboxTimer = setTimeout(() => cardWin && cardReady && cardWin.webContents.send("card-inbox", inboxList()), 60);
+}
+
+// Open the notch panel on "Needs you" (on one item when `focus` is given). ⌥⌘I, the menus and Talk.
+const PANEL_KEY = "Alt+Command+I";
+function openPanel(focus = null) {
+  if (!cardWin) createCardWin();
+  if (!cardReady) return void cardWin.webContents.once("did-finish-load", () => openPanel(focus));
+  showRest();
+  cardWin.webContents.send("card-panel", { focus });
+}
+const inboxMenuItem = () => {
+  const n = asks ? inboxList().needs.length : 0;
+  return { label: n ? `Inbox (${n} waiting)` : "Inbox", accelerator: PANEL_KEY, click: () => openPanel() };
+};
 
 function onDisplaysChanged() {
   noteDisplays();
@@ -652,6 +705,8 @@ function replyFor(agent, session) {
 // Pro: Earpiece's hosted speech-to-text. Free: your own OpenAI key. Neither: no mic.
 const canDictate = () => plan?.plan === "pro" || Boolean(lib.apiKey?.(lib.config(), "OPENAI_API_KEY"));
 
+const micAccess = async () => process.platform !== "darwin" || systemPreferences.getMediaAccessStatus("microphone") === "granted" || (await systemPreferences.askForMediaAccess("microphone"));
+
 async function transcribe(bytes, mime) {
   const type = /^audio\/[\w.+-]+/.exec(String(mime || ""))?.[0] || "audio/webm";
   const audio = Buffer.from(bytes || []);
@@ -682,9 +737,9 @@ async function transcribe(bytes, mime) {
 let lastLine = null; // { c, at }: the last done line shown, so a soft reply opened just after it can join it
 function presentCard(c) {
   if (!c?.line || prefs.get().showCard === false) return;
-  // A question is on screen, or you're replying to sessions: keep it there. The line is still spoken.
-  // Otherwise soft replies don't block lines: they ride on them instead.
-  if (navOpen || asks?.list().some((a) => !a.soft)) return;
+  // A question is waiting: the island stays on it. The line is still spoken.
+  // Soft replies don't block lines: they ride on them instead.
+  if (asks?.list().some((a) => !a.soft)) return;
   const a = c.agent ? lib.getAdapter(c.agent) : null;
   const agentName = c.agent ? lib.agentConfig(lib.config(), c.agent).label || a?.name || c.agent : "Earpiece";
   lastLine = { c, at: Date.now() };
@@ -714,37 +769,14 @@ function agentLabel(id) {
   return id ? lib.agentConfig(lib.config(), id).label || a?.name || id : "Earpiece";
 }
 
-const ARM_MS = 700; // the renderer disables the buttons for this long; the app enforces it too
-// The question you can actually see: set when the island is opened on it ("expanded"), cleared
-// when it folds back. Answers are only taken for this one, ARM_MS after it opened.
-let shown = { id: null, at: 0 };
+const ARM_MS = 700; // answers from the panel are refused this long after it opened
+// When you opened the panel. A click that opened it can't also approve something.
+let panelAt = 0;
 
-// Which waiting item the card shows (‹ › step through them). navOpen: you opened a Reply yourself, so
-// the card stays on the list of replies even when no question is waiting.
-let focusId = null;
-let navOpen = false;
-
-function askPayload(list, dir = 0) {
-  const pick = lib.navPick(lib.navItems(list), focusId, dir);
-  const a = pick.item;
-  focusId = a.id;
-  if (shown.id !== a.id) shown = { id: null, at: 0 };
-  return {
-    id: a.id,
-    line: a.line,
-    kind: a.soft ? "done" : "needs_input",
-    soft: Boolean(a.soft),
-    pos: pick.index + 1,
-    total: pick.total,
-    state: "ask",
-    agentId: a.agent,
-    agentName: agentLabel(a.agent),
-    session: a.session || null,
-    project: a.project || null,
-    more: 0, // the ‹ › counter replaces "+N more"
-    at: a.at,
-    ask: { id: a.id, kind: a.kind, tool: a.tool || null, detail: a.detail || "", why: a.why || "", canAlways: Boolean(a.canAlways), alwaysRule: a.alwaysRule || "", partial: Boolean(a.partial), expiresAt: a.expiresAt, canDictate: canDictate() },
-  };
+// The question the mini shows while it waits: the oldest one. The panel lists them all.
+function askPayload(hard) {
+  const a = lib.navItems(hard)[0];
+  return { id: a.id, line: a.line, kind: "needs_input", state: "ask", agentId: a.agent, agentName: agentLabel(a.agent), session: a.session || null, project: a.project || null, more: hard.length - 1, at: a.at, ask: { id: a.id } };
 }
 
 function confirmText(ask, answer) {
@@ -755,17 +787,20 @@ function confirmText(ask, answer) {
 }
 
 function onAsksChange(list, change) {
+  try {
+    pro?.onAsks?.(list, change);
+  } catch {}
+  sendInbox();
   if (prefs.get().showCard === false) return;
   const hard = list.filter((a) => !a.soft);
-  // A question is waiting, or you're already working through replies: show the list (questions first).
-  if (hard.length || (navOpen && list.length)) return deliverCard(askPayload(list));
-  navOpen = false;
+  // A question is waiting: the island stays amber in the notch until you open the panel.
+  if (hard.length) return deliverCard(askPayload(hard));
+  const confirm = () => {
+    const { ask, answer } = lastAnswer;
+    return deliverCard({ id: `ok-${ask.id}`, line: confirmText(ask, answer), kind: "done", state: "spoken", agentId: ask.agent, agentName: agentLabel(ask.agent), project: ask.project || null, brief: true });
+  };
   if (change.ask.soft) {
-    if (change.type === "answered" && lastAnswer) {
-      releaseCardFocus();
-      const { ask, answer } = lastAnswer;
-      return deliverCard({ id: `ok-${ask.id}`, line: confirmText(ask, answer), kind: "done", state: "spoken", agentId: ask.agent, agentName: agentLabel(ask.agent), project: ask.project || null, brief: true });
-    }
+    if (change.type === "answered" && lastAnswer) return confirm();
     // Opened: add the Reply button to that session's line if it's still the one on the card (the
     // reply usually arrives first, but the summary can win the race). Closed: take the button away.
     if (change.type === "open") {
@@ -775,11 +810,7 @@ function onAsksChange(list, change) {
     return;
   }
   // The last question just closed.
-  releaseCardFocus();
-  if (change.type === "answered" && lastAnswer) {
-    const { ask, answer } = lastAnswer;
-    return deliverCard({ id: `ok-${ask.id}`, line: confirmText(ask, answer), kind: "done", state: "spoken", agentId: ask.agent, agentName: agentLabel(ask.agent), project: ask.project || null, brief: true });
-  }
+  if (change.type === "answered" && lastAnswer) return confirm();
   cardPending = null;
   if (cardWin?.isVisible()) cardWin.webContents.send("card", { state: "clear" });
 }
@@ -810,6 +841,7 @@ function releaseCardFocus() {
   cardWin.setFocusable(false);
   const back = focusReturn;
   focusReturn = null;
+  if (back === false) return; // a jump already brought the agent's window forward
   if (process.platform !== "darwin" || win?.isVisible() || popover?.isVisible()) return;
   // Re-activate the app you were in; the island stays where it is.
   if (back) return void execFile("/usr/bin/open", ["-b", back.bundleId], () => {});
@@ -835,6 +867,68 @@ function checkCard() {
 }
 
 // ---------- actions ----------
+
+// An answer from the panel's "Needs you" tab (already held 2 s there, so Esc could take it back).
+// asks.answer() checks its shape again (unknown id, "always" when it isn't offered, empty reply).
+async function inboxAct(v) {
+  if (!panelAt || Date.now() - panelAt < ARM_MS) return { ok: false, error: "Wait a moment, then try again." };
+  const st = state();
+  const l = inboxList(st);
+  const it = [...l.needs, ...l.older, ...l.finished].find((x) => x.id === String(v.id || ""));
+  if (!it) return { ok: false, error: "That one is gone." };
+  try {
+    switch (v.action) {
+      case "permission":
+      case "choose": {
+        const ask = asks.get(it.id);
+        if (!ask) throw new Error("That question is gone.");
+        const answer = v.action === "choose" ? { behavior: "choose", answers: v.answers } : { behavior: String(v.behavior || "") };
+        lastAnswer = { ask, answer };
+        asks.answer(it.id, answer); // calls onAsksChange, which shows the confirmation
+        break;
+      }
+      case "reply": {
+        const text = String(v.text || "").trim();
+        if (!text) throw new Error("Type a reply first.");
+        const id = it.kind === "reply" ? it.id : it.replyId && asks.get(it.replyId) ? it.replyId : null;
+        if (id) {
+          lastAnswer = { ask: asks.get(id), answer: {} };
+          asks.answer(id, { text });
+        } else if (it.run && pro?.replyRun) await pro.replyRun(it.run, text);
+        else throw new Error("This agent runs in a terminal Earpiece can't type into. Open it there.");
+        break;
+      }
+      case "terminal": // the terminal asks instead, and you go there
+        asks.cancel(it.id, "terminal");
+        jumpToSession(it.agentId, it.session, { fallback: false });
+        break;
+      case "open": // opening a "needs you" item counts as seeing it
+        if (it.kind === "terminal") markSeen(it, st);
+        jumpToSession(it.agentId, it.session, { fallback: false });
+        break;
+      case "clear":
+        if (!it.id.startsWith("s:")) throw new Error("Answer it, or press O to answer it in its terminal.");
+        markSeen(it, st);
+        break;
+      default:
+        throw new Error("unknown action");
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    lastAnswer = null;
+  }
+}
+
+// Off the list until the session moves on. Marks older than two days are dropped.
+function markSeen(it, st) {
+  const s = st.sessions.find((x) => x.agentId === it.agentId && x.session === it.session);
+  if (!s) return;
+  const cleared = Object.entries({ ...inboxCleared(), [`${s.agentId}:${s.session}`]: s.updated || 0 }).filter(([, at]) => at > Date.now() - 2 * 86400_000);
+  lib.writeJson(inboxFile(), { cleared: Object.fromEntries(cleared) });
+  sendInbox();
+}
 
 function setMode(mode, minutes = 0) {
   lib.setMode(mode, minutes);
@@ -890,6 +984,8 @@ function buildMenu() {
   const { mode } = modeInfo();
   return Menu.buildFromTemplate([
     { label: "Open Earpiece", click: () => showMain() },
+    inboxMenuItem(),
+    ...(pro?.menu?.() || []),
     { type: "separator" },
     { label: "On", type: "radio", checked: mode === "on", click: () => setMode("on") },
     { label: "Quiet for 1 hour", sublabel: "shows updates, no voice", type: "radio", checked: mode === "quiet", click: () => setMode("quiet", 60) },
@@ -1036,6 +1132,8 @@ function appMenu() {
       submenu: [
         ...SECTIONS.map((s, i) => go(s, i + 1)),
         { type: "separator" },
+        { label: "Inbox", accelerator: PANEL_KEY, click: () => openPanel() },
+        { type: "separator" },
         ...(app.isPackaged ? [] : [{ role: "reload" }, { role: "toggleDevTools" }]),
         { role: "togglefullscreen" },
       ],
@@ -1065,10 +1163,12 @@ function appMenu() {
 // src/hub/jump.mjs. With nowhere to go, the dashboard opens instead.
 
 async function jumpToSession(agent, session, { fallback = true } = {}) {
+  if (cardWin?.isFocusable()) focusReturn = false; // the panel folds after this; don't refocus the app before
   const a = agent ? String(agent) : null;
   const s = a && session ? lib.getSession(a, String(session)) : null;
   // Started by Earpiece: its terminal is a window of ours.
-  if (s?.origin?.run && pro?.openRun?.(s.origin.run)) return { ok: true, how: "earpiece-run", precision: "tab" };
+  const runId = s?.origin?.run || pro?.runOf?.(s);
+  if (runId && pro?.openRun?.(runId)) return { ok: true, how: "earpiece-run", precision: "tab" };
   let r;
   try {
     r = await lib.jumpTo({ agent: a, origin: s?.origin || null, cwd: s?.cwd || null });
@@ -1135,36 +1235,20 @@ ipcMain.handle("card", (e, action, value) => {
     const v = value && typeof value === "object" ? value : {};
     jumpToSession(v.agent, v.session);
   }
-  else if (action === "focus") (value ? grabCardFocus() : releaseCardFocus());
+  // While the panel is open it keeps the keyboard; it gives it back when it folds.
+  else if (action === "focus") (value ? grabCardFocus() : panelAt || releaseCardFocus());
   else if (action === "size") {} // the window has a fixed height now (see CARD_H)
-  // ‹ › on the card: step to the previous / next waiting item. "reply": you clicked Reply on a line,
-  // so the card switches to that reply and the others become reachable too.
-  else if (action === "nav" || action === "reply") {
-    const list = asks?.list() || [];
-    if (!list.length) return;
-    if (action === "reply") (focusId = String(value || ""), (navOpen = true));
-    deliverCard(askPayload(list, action === "nav" ? (Number(value) < 0 ? -1 : 1) : 0));
-  } else if (action === "expanded") {
-    const id = value == null ? null : String(value);
-    shown = id && asks?.get(id) ? { id, at: Date.now() } : { id: null, at: 0 };
-    // Folded away with only replies left: back to plain lines (questions keep the card as before).
-    if (!id && navOpen && !(asks?.list() || []).some((a) => !a.soft)) {
-      navOpen = false;
-      if (cardWin?.isVisible()) cardWin.webContents.send("card", { state: "clear" });
-    }
-  } else if (action === "defer") {
-    // "Answer in the terminal instead": hand the question back and take you to that terminal.
-    const ask = asks?.get(String(value));
-    asks?.cancel(String(value), "deferred");
-    if (ask) jumpToSession(ask.agent, ask.session, { fallback: false });
+  else if (action === "panel") {
+    // You opened the panel (click or ⌥⌘I): it takes the keyboard for 1-9 / J / K, and gives it back on close.
+    if (value) ((panelAt = Date.now()), grabCardFocus(), sendInbox());
+    else ((panelAt = 0), releaseCardFocus());
   }
+  else if (action === "inbox-act") return inboxAct(value && typeof value === "object" ? value : {});
 });
-// The card's answer to a question. Only the card window may send it, and the shape is checked
-// again in asks.answer() (unknown id, "always" when it isn't offered, empty reply).
-// Only the card may use the microphone, and only for the reply box. Everything else is denied
+// Only the card (and a window Pro declares) may use the microphone. Everything else is denied
 // (Electron would otherwise grant any permission a page asks for).
 function guardPermissions() {
-  const allow = (wc, permission, details) => permission === "media" && wc === cardWin?.webContents && !(details?.mediaTypes || []).includes("video");
+  const allow = (wc, permission, details) => permission === "media" && (wc === cardWin?.webContents || pro?.micWindow?.(wc) === true) && !(details?.mediaTypes || []).includes("video");
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(allow(wc, permission, details)));
   session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details) => allow(wc, permission, { mediaTypes: details?.mediaType ? [details.mediaType] : [] }));
 }
@@ -1174,8 +1258,7 @@ ipcMain.handle("dictate", async (e, action, bytes, mime) => {
   if (!cardWin || e.sender !== cardWin.webContents) return { ok: false, error: "not available" };
   if (action === "start") {
     if (!canDictate()) return { ok: false, error: "Voice replies need Earpiece Pro or an OpenAI key." };
-    const granted = process.platform !== "darwin" || systemPreferences.getMediaAccessStatus("microphone") === "granted" || (await systemPreferences.askForMediaAccess("microphone"));
-    return granted ? { ok: true } : { ok: false, error: "Allow the microphone for Earpiece in System Settings → Privacy & Security → Microphone." };
+    return (await micAccess()) ? { ok: true } : { ok: false, error: "Allow the microphone for Earpiece in System Settings → Privacy & Security → Microphone." };
   }
   if (action === "transcribe") {
     try {
@@ -1193,24 +1276,6 @@ ipcMain.handle("pro", async (e, action, value) => {
     return { ok: true, value: await pro.handle(e.sender, String(action), value) };
   } catch (err) {
     return { ok: false, error: err.message };
-  }
-});
-ipcMain.handle("ask-answer", (e, id, answer) => {
-  if (!cardWin || e.sender !== cardWin.webContents || !asks) return { ok: false, error: "not available" };
-  const ask = asks.get(String(id));
-  if (!ask) return { ok: false, error: "That question is gone." };
-  // Only the question on screen, and only once it has been there a moment, can be answered.
-  if (shown.id !== ask.id || Date.now() - shown.at < ARM_MS) return { ok: false, error: "Wait a moment, then try again." };
-  const given = answer && typeof answer === "object" ? answer : {};
-  // asks.answer() calls onAsksChange before it returns; that is where the confirmation is shown.
-  lastAnswer = { ask, answer: { behavior: String(given.behavior || "") } };
-  try {
-    asks.answer(ask.id, given);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  } finally {
-    lastAnswer = null;
   }
 });
 ipcMain.handle("card-preview", () =>
@@ -1264,4 +1329,7 @@ app.on("before-quit", async (e) => {
   await h.close().catch(() => {});
   app.quit();
 });
+app.on("will-quit", () => globalShortcut.unregister(PANEL_KEY));
 app.on("window-all-closed", () => {}); // keeps running in the menu bar
+// Ctrl+C on the dev app, or a plain kill: quit properly, so the line playing stops too.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => app.quit());

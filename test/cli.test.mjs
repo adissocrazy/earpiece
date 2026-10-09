@@ -143,3 +143,23 @@ test("where: --here describes this shell, the table says 'not seen yet' until a 
   assert.equal(j.find((s) => s.project === "docs-site").origin, null);
   assert.ok(earpiece(["help"]).stdout.includes("where"));
 });
+
+test("pack: lists nothing, previews a repo before installing, and rejects bad usage", () => {
+  assert.match(earpiece(["pack"]).stdout, /No packs yet/);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "earpiece-cli-repo-"));
+  fs.mkdirSync(path.join(repo, "skills", "fmt"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "skills", "fmt", "SKILL.md"), "---\nname: fmt\ndescription: formats\n---\n");
+  fs.writeFileSync(path.join(repo, "skills", "fmt", "run.sh"), "echo");
+  const git = (...a) => spawnSync("git", a, { cwd: repo });
+  git("init", "-q", "-b", "main");
+  git("add", ".");
+  git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init");
+  let r = earpiece(["pack", "install", `file://${repo}`]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /fmt .*scripts: run\.sh[\s\S]*would copy fmt[\s\S]*--yes/);
+  assert.ok(!fs.existsSync(path.join(home, ".claude", "skills", "fmt")), "nothing installed without --yes");
+  r = earpiece(["pack", "install", `file://${repo}`, "--yes"]);
+  assert.match(r.stdout, /✓ Claude Code: copied fmt[\s\S]*✓ Saved the pack/);
+  assert.match(earpiece(["pack"]).stdout, /1 skills  from file:/);
+  assert.equal(earpiece(["pack", "bogus"]).status, 2);
+});

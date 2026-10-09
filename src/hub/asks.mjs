@@ -43,8 +43,26 @@ export function navPick(items, focusId, dir = 0) {
   return { item: items[i], index: i, total: items.length };
 }
 
+/**
+ * An AskUserQuestion answer: { "<question>": "<label>" } (or [labels] for multiSelect). Every
+ * question answered, every label one the agent offered, or a typed "Other" answer.
+ */
+function checkChoice(questions, answers) {
+  if (!answers || typeof answers !== "object") throw new Error("no answer");
+  const out = {};
+  for (const q of questions) {
+    const raw = answers[q.question];
+    const picked = (Array.isArray(raw) ? raw : [raw]).map((v) => String(v ?? "").trim().slice(0, MAX_REPLY)).filter(Boolean);
+    if (!picked.length) throw new Error("answer every question");
+    if (!q.multiSelect && picked.length > 1) throw new Error("pick one option");
+    out[q.question] = picked.join(", "); // the tool's answers are strings; several labels are comma-joined
+  }
+  return out;
+}
+
 /** Check what the card sent back for an ask. Returns the clean answer, or throws. */
 export function checkAnswer(ask, answer) {
+  if (ask.kind === "permission" && ask.questions && answer?.behavior === "choose") return { behavior: "choose", answers: checkChoice(ask.questions, answer.answers) };
   if (ask.kind === "permission") {
     const behavior = String(answer?.behavior || "");
     if (!BEHAVIORS.has(behavior)) throw new Error("unknown answer");

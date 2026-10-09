@@ -1,6 +1,6 @@
 # Answer from the card
 
-Approve or deny a tool request, or reply to a question, from the floating card instead of switching to the terminal. Claude Code and Codex are supported. It is off by default. Questions don't open on their own: the card's island turns amber and pulses in the notch until you click it.
+Approve or deny a tool request, or reply to a question, from the notch instead of switching to the terminal. Claude Code and Codex are supported. It is off by default. Questions don't open on their own: the island turns amber and pulses in the notch until you click it (or press ⌥⌘I), which opens the notch panel on it.
 
 ## Turn it on
 
@@ -13,16 +13,18 @@ Mac app: General → **Answer from the card**. CLI: `earpiece answers on` (needs
 
 ## What you see
 
-- **Tool request** (`PermissionRequest`): the card shows the tool, the exact command or file, and a countdown. **Allow** and **Deny** always; **Always allow** on Claude Code when Claude Code offers a permission rule for the request (it is the same rule the terminal's "don't ask again" option would add). Codex only accepts allow or deny, so there is no Always there.
-- **Question** (`Stop`): only when the agent's last message ends with a question mark. The card shows the question and a reply box. **Enter** sends, **Shift+Enter** adds a line, **Esc** leaves the box. Your text continues the turn as the next instruction (`The user replied from the Earpiece card: …`). Claude Code allows up to 8 of these continuations in a row.
-- **In terminal** (or the × button) hands the question back right away. The terminal prompt is used exactly as if Earpiece weren't there.
-- If several agents are waiting, the oldest is shown with "+N more".
+Everything waiting on you is in one list, the panel's **Needs you** tab, oldest question first, then work that finished in the last day. **J** / **K** move, **1**–**9** pick an answer, **R** replies, **O** answers in the terminal instead, **E** clears a finished item. Every answer waits 2 seconds with an undo bar; **Esc** takes it back.
+
+- **Tool request** (`PermissionRequest`): the panel shows the tool, the exact command or file, and a countdown. **Allow** and **Deny** always; **Always allow** on Claude Code when Claude Code offers a permission rule for the request (it is the same rule the terminal's "don't ask again" option would add). Codex only accepts allow or deny, so there is no Always there.
+- **Question** (`Stop`): only when the agent's last message ends with a question mark. The panel shows the question, with Yes / No or its numbered options when it has them, and **R** opens a reply box. **Enter** sends, **Shift+Enter** adds a line, **Esc** leaves the box. Your text continues the turn as the next instruction (`The user replied from the Earpiece card: …`). Claude Code allows up to 8 of these continuations in a row.
+- **Answer in terminal** (**O**) hands the question back right away. The terminal prompt is used exactly as if Earpiece weren't there.
+- If several agents are waiting, the resting icon shows how many, in amber.
 
 ## Safety
 
-- Nothing is approved by keyboard, and the buttons are disabled for the first 0.7 s a question is on screen.
-- The card never takes the keyboard by itself. Clicking into the reply box makes it focusable; when you finish, the app hides itself to return the keyboard to the terminal.
-- Only the card window can send an answer, and the app checks it again: it must be the question the island is open on, opened at least 0.7 s ago, and the answer must fit (Always only when offered, no empty reply).
+- The island never takes the keyboard by itself. Only opening the panel (a click, or ⌥⌘I) does, so its keys work; folding it gives the keyboard back to the app you were in. Keys typed into your terminal never reach it.
+- Every answer, by key or by click, is held 2 seconds with an undo bar (Esc), then sent.
+- Only the card window can send an answer, and the app checks it again: the panel must have been open at least 0.7 s, the item must still be waiting, and the answer must fit (Always only when offered, no empty reply).
 - A command too long for the card is shown with its start and its end and a "more characters not shown" marker, and can only be denied or left to the terminal. Invisible and direction-changing characters are stripped, and Always allow names the rule it will add.
 - At most 20 questions are open at once; more go straight to the terminal.
 - The hub socket is `0600`, with no network port. Commands are redacted (API keys, tokens) before they are shown.

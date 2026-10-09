@@ -56,3 +56,18 @@ test("`earpiece on` clears the app-closed marker", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.equal(fs.existsSync(P.appClosed), false);
 });
+
+test("the app's process gone without a Quit (Ctrl+C, crash, force quit) counts as closed", () => {
+  open();
+  const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"]).stdout.toString();
+  try {
+    fs.writeFileSync(P.appPid, JSON.stringify({ pid: process.pid }));
+    assert.equal(appClosed(), false, "running: not closed");
+    fs.writeFileSync(P.appPid, JSON.stringify({ pid: Number(dead) }));
+    assert.equal(appClosed(), true, "its process is gone");
+    assert.equal(policyBlock("done", {}), "app_closed");
+  } finally {
+    fs.rmSync(P.appPid, { force: true });
+  }
+  assert.equal(appClosed(), false, "CLI-only installs never have the file");
+});

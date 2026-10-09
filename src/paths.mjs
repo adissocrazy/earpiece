@@ -39,4 +39,5 @@ export const P = {
   shim: path.join(HOME, "bin", "earpiece-hook"), // what hooks call when the hub is installed
   account: path.join(HOME, "account.json"), // Pro sign-in, written by the Mac app (src/pro.mjs)
   appClosed: path.join(HOME, "app-closed.json"), // the Mac app was quit: hooks stay silent until it opens again
+  appPid: path.join(HOME, "app.pid.json"), // the Mac app while it runs; if that process is gone, it's closed too
 };

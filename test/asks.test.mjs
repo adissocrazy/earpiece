@@ -121,6 +121,7 @@ test("permission asks show the command, redact secrets and offer always only whe
   assert.equal(claude.toAsk({ ...PERM, permission_suggestions: [] }).canAlways, false);
   assert.equal(claude.toAsk({ ...PERM, permission_suggestions: [{ type: "setMode", mode: "acceptEdits" }] }).canAlways, false);
   assert.equal(codex.toAsk(PERM).canAlways, false, "Codex fails closed on updatedPermissions, so no always-allow there");
+  assert.equal(codex.toAsk({ ...PERM, permission_mode: "bypassPermissions" }), null, "full access: no card, Codex carries on");
   assert.equal(claude.toAsk({ hook_event_name: "PreToolUse", tool_name: "Bash" }), null);
   assert.equal(claude.toAsk({ hook_event_name: "PermissionRequest" }), null);
   const secret = describeToolInput("Bash", { command: "curl -H 'Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz0123456789' https://x.test" });
@@ -499,4 +500,31 @@ test("/ask: an agent Earpiece started (run id in the origin) brings its permissi
   } finally {
     await hub.close();
   }
+});
+
+test("AskUserQuestion: options reach the ask, a choice goes back as the tool's answers", () => {
+  const tool_input = {
+    questions: [
+      { question: "Which layout?", header: "Layout", multiSelect: false, options: [{ label: "Three tiers", description: "Recommended" }, { label: "One plan", description: "" }] },
+      { question: "Which extras?", header: "Extras", multiSelect: true, options: [{ label: "FAQ" }, { label: "Toggle" }] },
+    ],
+  };
+  const p = { tool_name: "AskUserQuestion", tool_input, session_id: "s1", cwd: "/x/shop" };
+  const ask = permissionAsk("claude-code", p);
+  assert.equal(ask.line, "Which layout?");
+  assert.equal(ask.canAlways, false);
+  assert.deepEqual(ask.questions[0].options.map((o) => o.label), ["Three tiers", "One plan"]);
+  assert.equal(ask.questions[1].multiSelect, true);
+
+  const clean = checkAnswer(ask, { behavior: "choose", answers: { "Which layout?": "One plan", "Which extras?": ["FAQ", "Toggle"] } });
+  assert.deepEqual(clean.answers, { "Which layout?": "One plan", "Which extras?": "FAQ, Toggle" });
+  assert.throws(() => checkAnswer(ask, { behavior: "choose", answers: { "Which layout?": "One plan" } }), /every question/);
+  assert.throws(() => checkAnswer(ask, { behavior: "choose", answers: { "Which layout?": ["a", "b"], "Which extras?": "FAQ" } }), /pick one/);
+  assert.throws(() => checkAnswer({ ...ask, questions: undefined }, { behavior: "choose", answers: {} }), /unknown answer/);
+
+  const out = permissionOutput(p, clean);
+  assert.deepEqual(out.hookSpecificOutput.decision, { behavior: "allow", updatedInput: { questions: tool_input.questions, answers: clean.answers } });
+
+  // Not an AskUserQuestion shape → a normal permission ask.
+  assert.equal(permissionAsk("claude-code", { tool_name: "AskUserQuestion", tool_input: { questions: "x" } }).questions, undefined);
 });

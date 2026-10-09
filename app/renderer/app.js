@@ -2,6 +2,7 @@
 // with DOM calls, so text from logs or agents is never parsed as HTML.
 const J = window.earpiece;
 const $ = (id) => document.getElementById(id);
+$("wave").append(window.EarpieceLogos.mascot());
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -24,6 +25,7 @@ const SECTIONS = {
   voice: "Voice",
   quiet: "Quiet",
   keys: "API Keys",
+  sync: "Skills & MCP",
   activity: "Activity",
   general: "General",
 };
@@ -37,6 +39,17 @@ let voiceFilter = { q: "", gender: "", accent: "", lang: "" };
 let macVoiceList = null;
 let activityFilter = "all";
 const agentOutput = {};
+let syncData = null; // syncInventory() payload
+let syncKind = "mcp";
+let syncShow = "attention";
+let syncQuery = "";
+let syncOutput = "";
+let packsData = null; // listPacks()
+let packFrom = ""; // the "Install from GitHub" box
+let packBusy = null; // the source being fetched for a preview
+let packPreview = null; // previewPack() payload + ref
+let packTo = new Set(); // tools ticked in the preview
+let packNew = null; // the New pack form: { name, description, picked: Set, remote }
 
 // ---------- helpers ----------
 
@@ -876,7 +889,7 @@ function welcome() {
     h(
       "div",
       { class: "welcome-card" },
-      h("span", { class: "wave", "aria-hidden": "true" }, h("i"), h("i"), h("i"), h("i"), h("i")),
+      h("span", { class: "mascot on", "aria-hidden": "true" }, window.EarpieceLogos.mascot()),
       h("h1", { id: "welcomeTitle" }, "Welcome to Earpiece"),
       h("p", {}, "Create your free account to hear about new features first."),
       h("button", { class: "google", onclick: start }, googleMark(), signingIn ? "Open Google again" : "Continue with Google"),
@@ -1004,7 +1017,325 @@ function general() {
   ];
 }
 
-const VIEWS = { overview, agents, voice, quiet, keys, activity, general };
+// ---------- skills & MCP ----------
+
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS = { check: "M5.5 10.5l3 3 6-7", plus: "M10 5.5v9M5.5 10h9", x: "M6.5 6.5l7 7M13.5 6.5l-7 7", update: "M15 7.5A5.5 5.5 0 1 0 15.5 12M15.5 4v3.5H12", dash: "M7 10h6" };
+function icon(name) {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 20 20");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("class", `ic ic-${name}`);
+  const p = document.createElementNS(SVG, "path");
+  p.setAttribute("d", ICONS[name]);
+  svg.append(p);
+  return svg;
+}
+const toolMark = (id, cls = "mini-mark") => h("span", { class: cls }, window.EarpieceLogos.logo(id));
+
+async function loadSync() {
+  try {
+    [syncData, packsData] = await Promise.all([act("syncInventory", {}, { quiet: true }), act("listPacks", {}, { quiet: true }).catch(() => [])]);
+  } catch (e) {
+    syncData = { error: e.message };
+  }
+  if (section === "sync") render();
+}
+
+async function runSync(action, args) {
+  let lines;
+  try {
+    lines = await act(action, args);
+  } catch {
+    return;
+  }
+  // One clean success is a toast; anything with a warning or a note stays on the page.
+  if (lines.length === 1 && lines[0].startsWith("✓")) {
+    syncOutput = "";
+    toast(lines[0].replace(/^✓ /, "").replace(/\s+\(backup:.*\)$/, ""));
+  } else syncOutput = lines.join("\n");
+  await loadSync();
+}
+
+function confirmRemove(name, tool, mcp) {
+  const what = mcp ? "MCP server" : "skill";
+  const after = mcp ? "The config file is backed up first." : "The folder moves to ~/.earpiece/backups/skills, so you can put it back.";
+  return confirm(`Remove the ${what} "${name}" from ${tool.name}?\n\n${after}`);
+}
+
+function syncCell(r, t, mcp) {
+  const c = r.by[t.id];
+  const label = `${r.name} in ${t.name}`;
+  const ghost = (text, ic, title, onclick, cls = "") => h("button", { class: `cell-btn ${cls}`, title, "aria-label": `${text} ${label}`, onclick }, icon(ic), h("span", {}, text));
+  if (!c) {
+    if (mcp && r.cantCopy[t.id]) return h("div", { class: "cell no", title: `Can't copy: ${r.cantCopy[t.id]}` }, icon("dash"), h("span", { class: "sr" }, `${label}: can't copy, ${r.cantCopy[t.id]}`));
+    return h("div", { class: "cell" }, ghost("Add", "plus", `Copy ${r.name} to ${t.name}`, () => runSync(mcp ? "syncMcp" : "syncSkill", { name: r.name, to: [t.id] })));
+  }
+  const outdated = !mcp && r.outdated.includes(t.id);
+  if (outdated && c.write) return h("div", { class: "cell" }, ghost("Update", "update", `Replace with the newer copy from ${syncToolName(r.newest)} (this one is backed up)`, () => runSync("syncSkill", { name: r.name, to: [t.id] }), "warn"));
+  const warn = outdated || (mcp && r.differs);
+  const title = outdated ? `Out of date. This copy is ${c.why}; update it there.` : mcp && r.differs ? "Set up differently from the other tools. Earpiece never replaces a server." : c.plugin ? `From the ${c.plugin} plugin` : c.why ? `Has it (${c.why})` : `Has it${c.where ? ` (${c.where})` : ""}`;
+  const removable = mcp ? !c.plugin : c.removable;
+  return h(
+    "div",
+    { class: `cell has${warn ? " warn" : ""}`, title },
+    h("span", { class: "tick" }, icon("check")),
+    h("span", { class: "sr" }, `${label}: ${title}`),
+    removable
+      ? h("button", { class: "cell-btn danger cell-x", title: `Remove from ${t.name}`, "aria-label": `Remove ${label}`, onclick: () => confirmRemove(r.name, t, mcp) && runSync(mcp ? "removeMcp" : "removeSkill", { name: r.name, from: [t.id] }) }, icon("x"), h("span", {}, "Remove"))
+      : null,
+  );
+}
+const syncToolName = (id) => syncData.tools.find((t) => t.id === id)?.name || id;
+
+function syncRow(r, tools, mcp) {
+  const missing = tools.filter((t) => !r.by[t.id] && !(mcp && r.cantCopy[t.id]));
+  const stale = mcp ? [] : r.outdated.filter((id) => r.by[id].write);
+  const first = Object.values(r.by).find(Boolean);
+  const plugin = Object.values(r.by).find((c) => c?.plugin)?.plugin;
+  const sub = mcp ? first?.summary : r.description || r.by[r.newest].where;
+  const subTitle = mcp ? sub : r.by[r.newest].where;
+  let all = null;
+  if (missing.length + stale.length > 1)
+    all = h("button", { class: "link", onclick: () => runSync(mcp ? "syncMcp" : "syncSkill", { name: r.name }) }, stale.length ? "Sync all" : "Add to all");
+  return h(
+    "div",
+    { class: "mx-row" },
+    h("div", { class: "mx-name" }, h("div", { class: "mx-title" }, h("b", { class: "selectable" }, r.name), plugin ? h("span", { class: "tag-plugin", title: `Comes with the ${plugin} plugin` }, plugin) : null), sub ? h("small", { class: `clip selectable${mcp || !r.description ? " mono" : ""}`, title: subTitle }, sub) : null),
+    tools.map((t) => syncCell(r, t, mcp)),
+    h("div", { class: "mx-all" }, all),
+  );
+}
+
+function sync() {
+  if (!syncData) {
+    loadSync();
+    return [h("div", { class: "group" }, h("div", { class: "empty" }, "Reading your tools…"))];
+  }
+  if (syncData.error) return [h("div", { class: "group" }, h("div", { class: "empty err" }, syncData.error))];
+  const mcp = syncKind === "mcp";
+  const packs = syncKind === "packs";
+  const tools = syncData.tools.filter((t) => t.present && (mcp || t.skills));
+  const rows = mcp ? syncData.mcp : syncData.skills;
+  const needs = (r) => (mcp ? r.differs || tools.some((t) => !r.by[t.id] && !r.cantCopy[t.id]) : r.outdated.length || tools.some((t) => !r.by[t.id]));
+  const q = syncQuery.toLowerCase();
+  const plug = (r) => Object.values(r.by).find((c) => c?.plugin)?.plugin || "";
+  const shown = rows.filter((r) => (syncShow === "all" || needs(r)) && (r.name.toLowerCase().includes(q) || plug(r).toLowerCase().includes(q)));
+  const count = (id, list) => list.filter((r) => r.by[id]).length;
+  const seg = (value, options, set, label) =>
+    h("div", { class: "seg", role: "radiogroup", "aria-label": label }, options.map(([id, l]) => h("button", { role: "radio", "aria-checked": String(value === id), onclick: () => (set(id), render()) }, l)));
+  const cols = `--n:${tools.length}`;
+  return [
+    h("p", { class: "lede" }, "Install a server or skill once, then add it to your other tools here. Earpiece converts the config for each tool and backs up every file it changes."),
+    h(
+      "div",
+      { class: "tool-cards" },
+      syncData.tools.map((t) =>
+        h(
+          "div",
+          { class: `tool-card${t.present ? "" : " off"}` },
+          toolMark(t.id, "mark"),
+          h(
+            "div",
+            { class: "label" },
+            h("b", {}, t.name),
+            h("small", {}, !t.present ? "Not installed" : t.error ? h("span", { class: "err" }, "Config unreadable") : `${count(t.id, syncData.mcp)} servers${t.skills ? ` · ${count(t.id, syncData.skills)} skills` : ""}`),
+          ),
+        ),
+      ),
+    ),
+    h(
+      "div",
+      { class: "filters", style: "margin:14px 0 10px" },
+      seg(syncKind, [["mcp", `MCP servers ${syncData.mcp.length}`], ["skills", `Skills ${syncData.skills.length}`], ["packs", `Packs ${packsData?.length ?? 0}`]], (v) => (syncKind = v), "Show"),
+      packs ? null : seg(syncShow, [["attention", "Missing somewhere"], ["all", "All"]], (v) => (syncShow = v), "Filter"),
+      packs ? h("span", { style: "flex:1" }) : h("input", {
+        type: "search",
+        placeholder: "Search names and plugins",
+        value: syncQuery,
+        "aria-label": "Search",
+        oninput: (e) => {
+          syncQuery = e.target.value;
+          const pos = e.target.selectionStart;
+          render();
+          const el = document.querySelector(".filters input[type=search]");
+          el?.focus();
+          el?.setSelectionRange(pos, pos);
+        },
+      }),
+      h("button", { class: "icon", title: "Read the configs again", "aria-label": "Refresh", onclick: loadSync }, icon("update")),
+    ),
+    syncOutput
+      ? h(
+          "div",
+          { class: "group sync-out" },
+          h("div", { class: "output selectable" }, syncOutput),
+          h("button", { class: "icon", title: "Dismiss", "aria-label": "Dismiss", onclick: () => ((syncOutput = ""), render()) }, icon("x")),
+        )
+      : null,
+    syncData.tools.filter((t) => t.error).map((t) => h("p", { class: "note err" }, `${t.name}: couldn't read its config (${t.error}).`)),
+    packs ? packsView(tools) : null,
+    packs ? null : h(
+      "div",
+      { class: "group matrix", style: cols },
+      h("div", { class: "mx-row mx-head" }, h("div", { class: "mx-name" }, `${shown.length} ${mcp ? "server" : "skill"}${shown.length === 1 ? "" : "s"}`), tools.map((t) => h("div", { class: "cell" }, toolMark(t.id), h("span", {}, t.name))), h("div")),
+      shown.length ? shown.map((r) => syncRow(r, tools, mcp)) : h("div", { class: "empty" }, syncShow === "all" || q ? "Nothing matches." : "Everything is in every tool."),
+    ),
+    packs ? null : h(
+      "p",
+      { class: "note" },
+      mcp
+        ? "Claude Desktop loads new servers after you quit and reopen it. Claude Code and Codex pick them up in new sessions. Plugin servers are removed by removing the plugin."
+        : "Claude Desktop keeps skills in your Claude account (Settings → Capabilities), so it has no column here. Plugin skills can be copied out, and update through their plugin.",
+    ),
+  ];
+}
+
+// ---------- skill packs (a segment of Skills & MCP) ----------
+
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+async function previewPack(ref) {
+  ref = String(ref || "").trim();
+  if (!ref || packBusy) return;
+  packBusy = ref;
+  packPreview = null;
+  render();
+  try {
+    packPreview = { ...(await act("previewPack", { ref })), ref };
+    packTo = new Set(syncData.tools.filter((t) => t.present && t.skills).map((t) => t.id));
+  } catch {
+  } finally {
+    packBusy = null;
+    render();
+  }
+}
+
+function packPreviewPanel(tools) {
+  const p = packPreview;
+  const install = btn(
+    "Install",
+    async () => {
+      const ref = p.ref;
+      packPreview = null;
+      await runSync("installPack", { ref, to: [...packTo] });
+    },
+    "primary",
+  );
+  install.disabled = !packTo.size;
+  return h(
+    "div",
+    { class: "group pack-preview" },
+    row(h("b", { class: "selectable" }, p.name), [plural(p.skills.length, "skill"), p.source && `from ${p.source}`, p.commit && `at ${p.commit.slice(0, 7)}`].filter(Boolean).join(" · ")),
+    p.skills.map((s) =>
+      row(
+        h("span", { class: "pack-skill" }, h("span", { class: "selectable" }, s.name), s.scripts.length ? h("span", { class: "tag-warn", title: s.scripts.join("\n") }, plural(s.scripts.length, "script")) : null),
+        s.description || s.from,
+        h("small", { class: "muted" }, plural(s.files, "file")),
+      ),
+    ),
+    h("div", { class: "output selectable", style: "padding-top:8px" }, p.lines.join("\n")),
+    row(
+      "Install into",
+      p.saved ? null : "Skills can run code on your machine. Read the scripts before you install.",
+      tools.map((t) =>
+        h("label", { class: "chk" }, h("input", { type: "checkbox", checked: packTo.has(t.id), onchange: (e) => (e.target.checked ? packTo.add(t.id) : packTo.delete(t.id), (install.disabled = !packTo.size)) }), t.name),
+      ),
+      btn("Cancel", () => ((packPreview = null), render())),
+      install,
+    ),
+  );
+}
+
+// Built once per render and never re-rendered while typing, so the filter and ticks keep focus.
+function newPackForm() {
+  const n = packNew;
+  const count = h("span", {}, String(n.picked.size));
+  const pick = h(
+    "div",
+    { class: "pack-pick" },
+    syncData.skills.map((s) =>
+      h("label", { class: "chk", title: s.description || "" }, h("input", { type: "checkbox", checked: n.picked.has(s.name), onchange: (e) => (e.target.checked ? n.picked.add(s.name) : n.picked.delete(s.name), (count.textContent = n.picked.size)) }), s.name),
+    ),
+  );
+  const filter = (e) => {
+    const q = e.target.value.toLowerCase();
+    for (const l of pick.children) l.hidden = !l.textContent.toLowerCase().includes(q);
+  };
+  return h(
+    "div",
+    { class: "group pack-new" },
+    row("Name", "Letters, digits, dot, dash or underscore.", h("input", { type: "text", value: n.name, placeholder: "team-setup", "aria-label": "Pack name", spellcheck: "false", oninput: (e) => (n.name = e.target.value) })),
+    row("Description", null, h("input", { type: "text", value: n.description, placeholder: "Optional", "aria-label": "Pack description", oninput: (e) => (n.description = e.target.value) })),
+    h(
+      "div",
+      { class: "row stack" },
+      h("div", { class: "pack-pick-head" }, h("div", { class: "label" }, "Your skills ", h("span", { class: "muted" }, "(", count, " picked)")), h("input", { type: "search", placeholder: "Filter", "aria-label": "Filter skills", oninput: filter })),
+      syncData.skills.length ? pick : h("div", { class: "empty" }, "No skills installed yet."),
+    ),
+    h(
+      "div",
+      { class: "row stack" },
+      h("div", { class: "label" }, "Skills from GitHub", h("small", {}, "One per line: github:org/repo/path/to/skill, optionally ending in @branch.")),
+      h("textarea", { rows: 3, class: "mono", "aria-label": "Skills from GitHub", spellcheck: "false", placeholder: "github:org/repo/skills/review", oninput: (e) => (n.remote = e.target.value) }, n.remote),
+    ),
+    row(
+      "",
+      null,
+      btn("Cancel", () => ((packNew = null), render())),
+      btn(
+        "Save pack",
+        async () => {
+          const name = n.name.trim();
+          const items = [...n.picked, ...n.remote.split("\n").map((l) => l.trim()).filter(Boolean)];
+          if (!name || !items.length) return toast("Give the pack a name and at least one skill.", true);
+          await act("createPack", { name, description: n.description.trim(), items }, { ok: `Saved ${name}` });
+          packNew = null;
+          await loadSync();
+        },
+        "primary",
+      ),
+    ),
+  );
+}
+
+function packsView(tools) {
+  const list = packsData || [];
+  const source = h("input", {
+    type: "text",
+    value: packFrom,
+    placeholder: "github:org/repo",
+    "aria-label": "Pack to install: github:org/repo, a git URL or a folder",
+    spellcheck: "false",
+    oninput: (e) => (packFrom = e.target.value),
+    onkeydown: (e) => e.key === "Enter" && previewPack(packFrom),
+  });
+  return [
+    h("div", { class: "group" }, row("Install a pack", "github:org/repo, a git URL or a folder. You see what's inside before anything is copied.", source, btn(packBusy ? "Fetching…" : "Preview", () => previewPack(packFrom)))),
+    packBusy ? h("div", { class: "group pack-preview" }, h("div", { class: "empty" }, `Fetching ${packBusy}…`)) : null,
+    packPreview ? packPreviewPanel(tools) : null,
+    packNew ? newPackForm() : null,
+    h(
+      "div",
+      { class: "group", style: "margin-top:10px" },
+      row(h("b", {}, plural(list.length, "pack")), null, packNew ? null : btn("New pack", () => ((packNew = { name: "", description: "", picked: new Set(), remote: "" }), render()))),
+      list.length
+        ? list.map((p) =>
+            row(
+              h("span", { class: "pack-skill" }, h("b", { class: "selectable" }, p.name), p.source ? h("span", { class: "tag-plugin", title: p.source }, "shared") : null),
+              [plural(p.skills.length, "skill"), p.source ? `from ${p.source}${p.commit ? ` at ${p.commit.slice(0, 7)}` : ""}` : p.skills.map((s) => s.name).join(", "), p.description].filter(Boolean).join(" · "),
+              btn("Install…", () => previewPack(p.name)),
+              btn("Export…", () => runSync("exportPack", { name: p.name })),
+              btn("Delete", () => confirm(`Delete the pack "${p.name}"?\n\nSkills it installed stay where they are.`) && runSync("deletePack", { name: p.name })),
+            ),
+          )
+        : h("div", { class: "empty" }, "No packs yet. A pack is a named set of skills you install into every agent at once."),
+    ),
+    h("p", { class: "note" }, "Export writes a folder you can push to GitHub. Teammates install it here, or with earpiece pack install github:org/repo. npx skills can read it too."),
+  ];
+}
+
+const VIEWS = { overview, agents, voice, quiet, keys, sync, activity, general };
 
 function headActions() {
   const a = [];
@@ -1051,6 +1382,7 @@ function go(s) {
   if (s !== section) $("view").scrollTop = 0;
   section = s;
   if (s === "activity") activityRows = null;
+  if (s === "sync") syncData = null; // re-read: you may have installed something since
   render();
 }
 

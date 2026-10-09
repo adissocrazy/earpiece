@@ -56,10 +56,12 @@ function fixture(t) {
       if (action === "hover") pointer.check();
     },
   };
-  for (const name of ["Card", "Geom", "Agents", "Rest", "Pointer"]) bridge[`on${name}`] = (fn) => { callbacks[name] = fn; };
+  for (const name of ["Card", "Geom", "Agents", "Rest", "Pointer", "Inbox", "Panel"]) bridge[`on${name}`] = (fn) => { callbacks[name] = fn; };
+  // The "Needs you" tab (panel.js) has its own tests; here it only has to answer card.js.
+  const panel = { calls: [], count: () => 0, busy: () => false, update() {}, close() {}, onKey() {}, setTab: (t) => panel.calls.push(["tab", t]), focus: (id) => panel.calls.push(["focus", id]) };
   vm.runInNewContext(renderer, {
-    window: { earpiece: bridge, EarpieceLogos: { logo: element } },
-    document: { getElementById: get, body: element(), activeElement: null, createElement: element },
+    window: { earpiece: bridge, EarpieceLogos: { logo: element }, EarpiecePanel: panel, addEventListener() {} },
+    document: { getElementById: get, body: element(), activeElement: null, createElement: element, addEventListener() {} },
     setTimeout, clearTimeout, requestAnimationFrame: (fn) => fn(),
   });
   callbacks.Geom({ notch: true, notchW: 204, notchH: 33 });
@@ -67,7 +69,7 @@ function fixture(t) {
   pointer.start();
   t.after(() => pointer.stop());
   return {
-    get, callbacks, messages,
+    get, callbacks, messages, panel,
     move(x, y) { point = { x, y }; t.mock.timers.tick(60); },
     tick: (ms) => t.mock.timers.tick(ms),
     view: () => get("card").dataset.view,
@@ -112,28 +114,34 @@ test("a notification stays readable while hovered and folds after a real exit", 
   assert.equal(f.view(), "mini");
 });
 
-test("questions still require a click and keep their button arming delay", (t) => {
+test("a question waits in the notch until clicked, then opens the panel on it", (t) => {
   const f = fixture(t);
-  f.callbacks.Card({
-    id: "ask-1", line: "Run the command?", state: "ask", kind: "needs_input",
-    ask: { id: "ask-1", kind: "permission", expiresAt: Date.now() + 60_000 },
-  });
+  f.callbacks.Card({ id: "ask-1", line: "Run the command?", state: "ask", kind: "needs_input", ask: { id: "ask-1" } });
   f.move(630, 15);
   f.tick(1000);
   assert.equal(f.view(), "mini", "hover does not open permission prompts");
   f.get("card").fire("click");
-  assert.equal(f.view(), "open");
-  assert.equal(f.get("allow").disabled, true);
-  f.move(550, 180);
-  f.get("card").fire("mouseleave");
-  f.tick(500);
-  assert.equal(f.view(), "open");
-  assert.equal(f.get("allow").disabled, true);
-  f.tick(200);
-  assert.equal(f.get("allow").disabled, false);
+  assert.equal(f.view(), "list");
+  assert.deepEqual(f.panel.calls.at(-1), ["focus", "ask-1"]);
+  assert.deepEqual(f.messages.filter((m) => m.action === "panel").map((m) => m.value), [true], "the panel takes the keyboard");
   f.move(550, 400);
-  f.tick(450);
-  assert.equal(f.view(), "mini");
+  f.tick(300);
+  assert.equal(f.view(), "mini", "leaving folds it back; the question still waits");
+  assert.deepEqual(f.messages.filter((m) => m.action === "panel").map((m) => m.value), [true, false], "and gives the keyboard back");
+});
+
+test("opened with ⌥⌘I, the panel stays until the pointer has been on it and left", (t) => {
+  const f = fixture(t);
+  f.move(550, 400);
+  f.callbacks.Panel({ focus: null });
+  assert.equal(f.view(), "list");
+  assert.deepEqual(f.panel.calls.at(-1), ["tab", "agents"], "nothing waiting: the agents");
+  f.tick(2000);
+  assert.equal(f.view(), "list", "the pointer was never on it");
+  f.move(550, 180);
+  f.move(550, 400);
+  f.tick(300);
+  assert.equal(f.view(), "rest");
 });
 
 test("a gone island reports no interactive area even on a notched display", (t) => {

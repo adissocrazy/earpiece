@@ -440,6 +440,23 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
   };
 
   // The one entry point for renderer actions.
+  // `earpiece pack … --json` in a child process: cloning a repo can take a while, and the window
+  // must keep drawing meanwhile. Arguments go as argv, never through a shell.
+  function runPack(args) {
+    return new Promise((resolve, reject) =>
+      execFile(process.execPath, [lib.coreBin, "pack", ...args, "--json"], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 180_000, maxBuffer: 4 << 20 }, (err, out) => {
+        let v;
+        try {
+          v = JSON.parse(String(out).trim().split("\n").pop());
+        } catch {
+          return reject(new Error(err?.killed ? "Fetching the pack took too long." : "Earpiece couldn't read the pack."));
+        }
+        if (v?.error) return reject(new Error(v.error));
+        resolve(v);
+      }),
+    );
+  }
+
   async function action(win, name, a = {}) {
     switch (name) {
       case "data":
@@ -491,6 +508,43 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
       case "openUrl":
         if (a.url !== `https://github.com/${REPO}/releases` && !String(a.url).startsWith(`https://github.com/${REPO}/releases/`)) throw bad("not allowed");
         return shell.openExternal(a.url);
+      case "syncInventory":
+        return lib.syncInventory();
+      case "syncMcp":
+      case "syncSkill": {
+        const ids = lib.SYNC_TOOLS.map((t) => t.id);
+        const to = Array.isArray(a.to) ? a.to.map(String) : undefined;
+        if (typeof a.name !== "string" || !a.name || to?.some((id) => !ids.includes(id)) || (a.from && !ids.includes(a.from))) throw bad("unknown server, skill or tool");
+        return (name === "syncMcp" ? lib.syncMcp : lib.syncSkill)(a.name, { to, from: a.from || undefined });
+      }
+      case "removeMcp":
+      case "removeSkill": {
+        const ids = lib.SYNC_TOOLS.map((t) => t.id);
+        const from = Array.isArray(a.from) ? a.from.map(String) : [];
+        if (typeof a.name !== "string" || !a.name || !from.length || from.some((id) => !ids.includes(id))) throw bad("unknown server, skill or tool");
+        return (name === "removeMcp" ? lib.removeMcp : lib.removeSkill)(a.name, { from });
+      }
+      case "listPacks":
+        return lib.listPacks();
+      case "createPack":
+        if (!Array.isArray(a.items) || a.items.some((i) => typeof i !== "string")) throw bad("bad skills list");
+        return lib.createPack(String(a.name), a.items, { description: String(a.description || ""), force: a.force === true });
+      case "deletePack":
+        return lib.deletePack(String(a.name));
+      case "previewPack":
+      case "installPack": {
+        const ids = lib.SYNC_TOOLS.filter((t) => t.skills).map((t) => t.id);
+        const to = Array.isArray(a.to) ? a.to.map(String) : [];
+        if (typeof a.ref !== "string" || !a.ref.trim() || a.ref.startsWith("-") || to.some((id) => !ids.includes(id))) throw bad("unknown pack or tool");
+        const args = [name === "previewPack" ? "preview" : "install", a.ref.trim(), ...(to.length ? ["--to", to.join(",")] : []), ...(name === "installPack" ? ["--yes"] : [])];
+        return runPack(args);
+      }
+      case "exportPack": {
+        if (!lib.readPack(String(a.name))) throw bad("unknown pack");
+        const r = await dialog.showOpenDialog(win, { title: `Export ${a.name}`, message: "Pick an empty folder (or an earlier export of this pack).", properties: ["openDirectory", "createDirectory"], buttonLabel: "Export Here" });
+        if (r.canceled || !r.filePaths[0]) return [];
+        return runPack(["export", String(a.name), r.filePaths[0]]);
+      }
       case "open": {
         const p = OPENABLE[a.what]?.();
         if (!p) throw bad("nothing to open");

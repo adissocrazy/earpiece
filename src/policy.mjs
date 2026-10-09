@@ -32,7 +32,21 @@ export const quietAllows = (qh, kind) => (Array.isArray(qh?.allow) ? qh.allow : 
 // The Mac app writes this on Quit and removes it on launch: quitting Earpiece means Earpiece is off.
 // Hooks that fire meanwhile still update the session list, but nothing is spoken or summarised.
 // CLI-only installs (no app) never have it. `earpiece on` clears it.
-export const appClosed = () => fs.existsSync(P.appClosed);
+// The app also leaves its pid while it runs: if that process is gone without a Quit (Ctrl+C on the
+// dev app, a crash, a force quit), it's closed all the same.
+export const appClosed = () => fs.existsSync(P.appClosed) || appGone();
+
+// ponytail: a reused pid reads as "still running"; rare, and the next launch rewrites the file.
+function appGone() {
+  const pid = readJson(P.appPid, null)?.pid;
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === "ESRCH";
+  }
+}
 
 // Returns a skip reason, or null if this kind of line may be spoken now.
 export function policyBlock(kind, cfg, d = new Date()) {

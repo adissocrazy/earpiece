@@ -40,5 +40,10 @@
     return svg;
   }
 
-  window.EarpieceLogos = { logo, has: (id) => Boolean(FOR_AGENT[String(id || "").toLowerCase()]) };
+  // Earpiece's own character: a puffy triangle with glasses, sleepy eyes and a bow tie. Static markup.
+  // A parent with class "on" makes it sway and open its eyes (app.css).
+  const MASCOT = `<svg xmlns="${NS}" viewBox="14 12 74 74" aria-hidden="true" class="mascot-svg"><g class="ms-sway"><polygon points="53,27 29,64 73,64" fill="#3ee0a8" stroke="#3ee0a8" stroke-width="24" stroke-linejoin="round"/><g transform="rotate(-4 46 45)" fill="none" stroke="#0b0b0d" stroke-width="2.6" stroke-linecap="round"><ellipse cx="37" cy="45" rx="6.5" ry="9"/><ellipse cx="53" cy="45" rx="6.5" ry="9"/><path d="M43.5 44.5h3M59.5 44.5h4.5"/><path class="ms-lids" d="M33.5 46q3.5 2.6 7 0M49.5 46q3.5 2.6 7 0"/></g><g class="ms-pupils" transform="rotate(-4 46 45)" fill="#0b0b0d"><circle cx="37.5" cy="45.5" r="2.4"/><circle cx="53.5" cy="45.5" r="2.4"/></g><g fill="#0b0b0d" stroke="#0b0b0d" stroke-width="2" stroke-linejoin="round"><path d="M47 67L36 62Q33.7 67 36 72Z M47 67L58 62Q60.3 67 58 72Z"/><circle cx="47" cy="67" r="2.3"/></g></g></svg>`;
+  const mascot = () => new DOMParser().parseFromString(MASCOT, "image/svg+xml").documentElement;
+
+  window.EarpieceLogos = { logo, mascot, has: (id) => Boolean(FOR_AGENT[String(id || "").toLowerCase()]) };
 })();

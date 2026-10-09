@@ -14,6 +14,8 @@ import { startHubServer } from "../hub/server.mjs";
 import { stopSpeaking } from "../control.mjs";
 import { writeShim } from "../shim.mjs";
 import { cmdDoctor } from "./doctor.mjs";
+import { cmdPack } from "./pack.mjs";
+import { cmdSync } from "./sync.mjs";
 import { betterOrigin, describeOrigin, jumpPrecision, rawFromEnv, resolveOrigin } from "../hub/origin.mjs";
 import { jumpPlan, jumpTo, resolveTarget } from "../hub/jump.mjs";
 import { listSessions, updateSession } from "../hub/sessions.mjs";
@@ -65,6 +67,20 @@ Control
                                         floating card (Claude Code, Codex; needs the app or \`serve\`)
   earpiece status
   earpiece doctor                      check every hook and config points at this copy, the hub and keys
+
+Skills & MCP
+  earpiece sync [--full]                which MCP servers and skills each tool has (Claude Code, Codex, Claude Desktop)
+  earpiece sync mcp <name>|--all [--to codex,claude-code] [--from id] [--dry-run]
+                                        add a server to the tools missing it (never replaces one)
+  earpiece sync skill <name>|--all|--outdated [--to …] [--from id] [--dry-run]
+                                        copy a skill, or update out-of-date copies (old copy is backed up)
+  earpiece sync remove mcp|skill <name> --from codex,claude-code|--everywhere [--dry-run]
+  earpiece pack [show <name>]           your skill packs: bundles of skills you install into every agent at once
+  earpiece pack create <name> <skill|path|github:org/repo/path[@ref]>… [--description "…"]
+  earpiece pack install <name|github:org/repo[@ref]|./dir> [--to codex,claude-code] [--dry-run] [--yes]
+                                        packs from a repo or folder are shown first; --yes installs them
+  earpiece pack export <name> <dir>     a folder to push to GitHub (npx skills can read it too)
+  earpiece pack delete <name>
 
 Agent entry points (written by \`earpiece install\`)
   earpiece hook [adapter]               Claude Code hooks (payload on stdin)
@@ -604,11 +620,17 @@ export async function main(argv) {
     case "on":
       setMode("on");
       fs.rmSync(P.appClosed, { force: true }); // also undoes a Quit of the Mac app
+      fs.rmSync(P.appPid, { force: true });
       return console.log("earpiece: on");
     case "status":
       return cmdStatus();
     case "doctor":
       return cmdDoctor();
+    case "sync":
+      return cmdSync(rest);
+    case "pack":
+    case "packs":
+      return cmdPack(rest);
     case "stop":
     case "flush":
       return cmdStop();

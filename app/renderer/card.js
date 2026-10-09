@@ -1,19 +1,19 @@
 // The notch island. The app sends it one card at a time, plus the shape of the screen it is on
-// (notch or not), and the list of running agents. Six views:
+// (notch or not), the list of running agents and what is waiting on you. Six views:
 //   gone  - nothing on screen (the app hides the window); only when the resting icon is off
-//   rest  - the resting icon: Earpiece mark and running count on the left wing, a status dot on
-//           the right (green working, amber needs you, red error, grey idle); click for the list
-//   list  - the agents list, dropped down from the resting icon; click a row to go to that agent
+//   rest  - the resting icon: Earpiece mark and a count on the left wing (amber: how many need
+//           you; else how many run), a status dot on the right; click for the panel
+//   list  - the panel, dropped down from the notch: "Needs you" (panel.js) and "Agents"
 //   mini  - collapsed into the notch after a line: agent logo on the left, wave or dot on the right
 //   peek  - a new line opens it for a few seconds, then it folds back into the notch
-//   open  - you clicked it; it stays open while the pointer is on it
-// A question an agent is waiting on ("ask" cards) never opens by itself: the island turns amber
-// and pulses in the notch until you click it. Nothing is approved without a click on a button,
-// and the buttons only wake up a moment after the question is opened.
+//   open  - you clicked a line; it stays open while the pointer is on it
+// A question an agent is waiting on never opens by itself: the island turns amber and pulses in
+// the notch until you click it, which opens the panel on it. Nothing is approved without a key or
+// a click there, held 2 s so Esc can take it back.
 const J = window.earpiece;
 const $ = (id) => document.getElementById(id);
 const island = $("card");
-const box = $("replyText");
+const P = window.EarpiecePanel;
 const REASON = { mode_quiet: "Quiet", quiet_hours: "Quiet hours", agent_disabled: "Muted", voice_failed: "No voice" };
 
 const FULL_W = 460; // the window is 480 wide; 10 px either side for the curved shoulders
@@ -22,7 +22,6 @@ const VIRTUAL = { w: 230, h: 32 }; // the collapsed pill on a screen without a n
 const REST_WING = 36; // each wing of the resting icon
 const REST_VIRTUAL_H = 24; // the resting pill on a screen without a notch
 const STATUS = { waiting: "Needs you", error: "Error", working: "Working", done: "Done", idle: "Idle" };
-const ARM_MS = 700;
 // A "speaking" card is replaced within seconds by spoken/stopped. If it never is (the process
 // that wrote it died), don't leave the wings up for ever.
 const SPEAKING_MAX_MS = 60_000;
@@ -34,11 +33,10 @@ let geom = { notch: false, notchW: 0, notchH: 0 };
 let current = null;
 let view = "gone";
 let hovering = false;
-let busy = false;
 let timer = null;
-let armTimer = null;
 let goneTimer = null;
 let rest = false; // the app wants the island resting in the notch between lines
+let touched = false; // the pointer has been on the open panel (opened with ⌥⌘I it hasn't, yet)
 let agents = { rows: [], more: 0, active: 0, waiting: 0, tone: "idle", mode: "on", now: Date.now() };
 
 // Where the island goes when nothing needs showing: a waiting question stays in the notch.
@@ -112,16 +110,7 @@ function setView(v, force = false) {
     if (!current?.ask) current = null; // the line has been seen; the next one peeks fresh
     J.card("rest");
   }
-  if (current?.ask) {
-    if (v === "open" && (was !== "open" || force)) {
-      arm(false); // buttons wake up ARM_MS after you can see them
-      J.card("expanded", current.ask.id);
-    } else if (v !== "open" && was === "open") {
-      arm(false);
-      J.card("expanded", null);
-    }
-  }
-  if (v !== "open" && document.activeElement === box) (box.blur(), J.card("focus", false));
+  if (was === "list" && v !== "list") (P.close(), J.card("panel", false)); // the keyboard goes back
   schedule();
 }
 
@@ -140,8 +129,8 @@ function lingerFor(c) {
 function schedule() {
   clearTimeout(timer);
   if (hovering) return;
-  // Typing in a field on the list (Pro's run controls) keeps it open.
-  if (view === "list") return void (timer = setTimeout(() => !document.activeElement?.matches?.("input, textarea, select") && setView(idle()), LIST_LEAVE_MS));
+  // The pointer left the panel: fold, unless you're typing in it or an answer is still held.
+  if (view === "list") return void (touched && (timer = setTimeout(() => !document.activeElement?.matches?.("input, textarea, select") && !P.busy() && setView(idle()), LIST_LEAVE_MS)));
   if (!current) return;
   if (view === "peek") timer = setTimeout(() => setView(current?.brief ? idle() : "mini"), peekFor(current));
   else if (view === "mini" && !current.ask) timer = setTimeout(() => setView(idle()), lingerFor(current));
@@ -149,208 +138,38 @@ function schedule() {
 }
 
 function foldIfIdle() {
-  if (hovering || busy || rec || transcribing || document.activeElement === box || (current?.ask && box.value.trim())) return;
+  if (hovering) return;
   setView(current?.brief ? idle() : "mini");
 }
 
-// ---------- questions ----------
+// ---------- the panel ----------
 
-const choiceButtons = () => [$("allow"), $("always"), $("deny"), $("terminal"), $("send"), $("replyTerminal")];
-
-function setBusy(on) {
-  busy = on;
-  for (const b of choiceButtons()) b.disabled = on || b.dataset.armed !== "1";
+// Needs you when something waits (or you asked for one item), otherwise your agents. Opening it is
+// the one time the island takes the keyboard (1-9, J, K); folding it gives the keyboard back.
+function openPanel(focus = null, reply = false) {
+  if (focus) P.focus(focus, reply);
+  else P.setTab(P.count() ? "needs" : "agents");
+  touched = hovering;
+  if (view !== "list") J.card("panel", true);
+  setView("list", true);
 }
+const closePanel = () => view === "list" && setView(idle());
+window.addEventListener("panel-close", closePanel);
+window.addEventListener("panel-resize", () => view === "list" && setView("list", true));
+// You clicked somewhere else: the panel had the keyboard, so it folds like a menu would. Not while
+// you'd lose something, or while Pro's run form has a folder picker open.
+window.addEventListener("blur", () => !P.busy() && !document.activeElement?.closest?.("#runs") && closePanel());
+document.addEventListener("keydown", (e) => view === "list" && P.onKey(e));
+$("tabNeeds").addEventListener("click", (e) => (e.stopPropagation(), P.setTab("needs")));
+$("tabAgents").addEventListener("click", (e) => (e.stopPropagation(), P.setTab("agents")));
 
-function arm(on) {
-  clearTimeout(armTimer);
-  for (const b of choiceButtons()) b.dataset.armed = on ? "1" : "0";
-  setBusy(false);
-  if (!on && view === "open") armTimer = setTimeout(() => arm(true), ARM_MS);
-}
-
-function startTimer(expiresAt) {
-  const bar = $("timerBar");
-  const left = Math.max(0, expiresAt - Date.now());
-  bar.style.transition = "none";
-  bar.style.transform = "scaleX(1)";
-  void bar.offsetWidth;
-  bar.style.transition = `transform ${left}ms linear`;
-  bar.style.transform = "scaleX(0)";
-}
-
-// Half-typed replies, per waiting item, so ‹ › doesn't lose what you were writing.
-const drafts = new Map();
-let openNext = false; // you clicked Reply / an arrow: open the next ask card instead of folding it to mini
-
-function showAsk(c) {
-  const a = c.ask;
-  const perm = a.kind === "permission";
-  $("ask").hidden = false;
-  $("detail").textContent = a.detail || "";
-  $("detail").hidden = !a.detail;
-  $("why").textContent = a.why || "";
-  $("why").hidden = !a.why;
-  $("rule").textContent = a.canAlways && a.alwaysRule ? `Always allow adds: ${a.alwaysRule}` : "";
-  $("rule").hidden = !$("rule").textContent;
-  $("allow").hidden = Boolean(a.partial);
-  $("askErr").textContent = a.partial ? "Too long to approve here. Check the whole command in the terminal." : "";
-  $("choices").hidden = !perm;
-  $("always").hidden = !a.canAlways;
-  $("reply").hidden = perm;
-  $("mic").hidden = perm || !a.canDictate;
-  box.value = drafts.get(a.id) || "";
-  box.placeholder = `Reply to ${c.agentName || "the agent"}…  (Enter to send, Shift+Enter for a new line)`;
-  $("askErr").hidden = !a.partial;
-  arm(false);
-  startTimer(a.expiresAt);
-}
-
-function hideAsk() {
-  stopDictation(true);
-  $("ask").hidden = true;
-  clearTimeout(armTimer);
-  if (document.activeElement === box) box.blur();
-}
-
-async function answer(payload) {
-  if (!current?.ask || busy || view !== "open") return;
-  const id = current.ask.id;
-  setBusy(true);
-  let r;
-  try {
-    r = await J.answer(id, payload);
-  } catch (e) {
-    r = { ok: false, error: e.message };
-  }
-  if (r?.ok) drafts.delete(id);
-  if (r?.ok || current?.ask?.id !== id) return; // the app has already moved the card on
-  $("askErr").textContent = r?.error || "Couldn't send that.";
-  $("askErr").hidden = false;
-  setBusy(false);
-  reportSize();
-}
-
-$("allow").addEventListener("click", () => answer({ behavior: "allow" }));
-$("always").addEventListener("click", () => answer({ behavior: "always" }));
-$("deny").addEventListener("click", () => answer({ behavior: "deny" }));
-const toTerminal = () => current?.ask && view === "open" && J.card("defer", current.ask.id);
-$("terminal").addEventListener("click", toTerminal);
-// Reply from the notch: ask the app to show this line's reply as the card. It comes back like a
-// question (same checked answer path) but without the amber pulse, with ‹ › to the others waiting.
+// Reply on a finished line: the panel opens on that session, with its reply box.
 $("replyBtn").addEventListener("click", (e) => {
   e.stopPropagation();
   if (!current?.reply) return;
   pointerEntered();
-  openNext = true;
-  J.card("reply", current.reply.id); // the app sends this reply back as the card, with ‹ › to the others
+  openPanel(`s:${current.agentId}:${current.session}`, true);
 });
-
-// ‹ › : step through every session waiting on you (questions first). Answers stay tied to the one shown.
-function navStep(dir) {
-  if (!current?.ask || !(current.total > 1)) return;
-  pointerEntered();
-  openNext = true;
-  J.card("nav", dir);
-}
-$("navPrev").addEventListener("click", (e) => (e.stopPropagation(), navStep(-1)));
-$("navNext").addEventListener("click", (e) => (e.stopPropagation(), navStep(1)));
-box.addEventListener("input", () => current?.ask && drafts.set(current.ask.id, box.value));
-$("replyTerminal").addEventListener("click", toTerminal);
-
-// ---------- voice replies ----------
-// Tap the mic to record, tap again to stop (60 s at most). The clip is turned into text by the app
-// (Earpiece Pro, or your own OpenAI key) and lands in the box. Nothing is sent until you press Send.
-const MAX_REC_MS = 60_000;
-let rec = null; // { recorder, stream, timer }
-let transcribing = false;
-
-function replyError(msg) {
-  $("askErr").textContent = msg || "Something went wrong.";
-  $("askErr").hidden = false;
-  reportSize();
-}
-
-async function startDictation() {
-  if (rec || transcribing || !current?.ask) return;
-  $("askErr").hidden = true;
-  const ok = await J.dictate("start");
-  if (!ok?.ok) return replyError(ok?.error);
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    return replyError("Couldn't open the microphone.");
-  }
-  const chunks = [];
-  const recorder = new MediaRecorder(stream, MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { mimeType: "audio/webm;codecs=opus" } : undefined);
-  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  recorder.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    $("mic").classList.remove("recording");
-    if (recorder.cancelled || !chunks.length) return;
-    transcribing = true;
-    $("mic").classList.add("busy");
-    const type = (recorder.mimeType || "audio/webm").split(";")[0];
-    const r = await J.dictate("transcribe", new Uint8Array(await new Blob(chunks, { type }).arrayBuffer()), type);
-    transcribing = false;
-    $("mic").classList.remove("busy");
-    if (!r?.ok) return replyError(r?.error);
-    if (r.text) box.value = box.value.trim() ? `${box.value.trimEnd()} ${r.text}` : r.text;
-    await J.card("focus", true); // you tapped the mic, so the box may take the keyboard to review and send
-    box.focus();
-    reportSize();
-  };
-  recorder.start();
-  rec = { recorder, stream, timer: setTimeout(() => stopDictation(false), MAX_REC_MS) };
-  $("mic").classList.add("recording");
-  $("mic").title = "Stop recording";
-}
-
-function stopDictation(cancel) {
-  if (!rec) return;
-  const r = rec;
-  rec = null;
-  clearTimeout(r.timer);
-  $("mic").title = "Speak your reply (it lands in the box; you press Send)";
-  if (cancel) r.recorder.cancelled = true;
-  if (r.recorder.state !== "inactive") r.recorder.stop();
-  else r.stream.getTracks().forEach((t) => t.stop());
-}
-
-$("mic").addEventListener("click", (e) => {
-  e.stopPropagation();
-  if (rec) stopDictation(false);
-  else startDictation();
-});
-
-// The island never takes the keyboard on its own. Clicking into the box makes it focusable;
-// the app gives the keyboard back to your terminal when the box is done with.
-box.addEventListener("mousedown", async (e) => {
-  if (document.activeElement === box) return;
-  e.preventDefault();
-  await J.card("focus", true);
-  box.focus();
-});
-box.addEventListener("blur", () => {
-  if (!box.value.trim()) J.card("focus", false);
-  schedule();
-});
-box.addEventListener("keydown", (e) => {
-  if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-    e.preventDefault();
-    return navStep(e.key === "ArrowLeft" ? -1 : 1);
-  }
-  if (e.key === "Escape") {
-    e.preventDefault();
-    box.blur();
-    J.card("focus", false);
-  } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    if (box.value.trim()) answer({ text: box.value });
-  }
-});
-$("send").addEventListener("click", () => box.value.trim() && answer({ text: box.value }));
 
 // ---------- showing cards ----------
 
@@ -362,35 +181,23 @@ function setLogo(el, agentId) {
 function show(c) {
   // A soft reply ended without an answer (timed out, you typed in the terminal, a newer turn).
   if (c.state === "reply-gone") {
-    drafts.delete(c.replyId);
     if (current?.reply?.id !== c.replyId) return;
     current.reply = null;
     $("replyBtn").hidden = true;
-    if (current.ask?.id === c.replyId) {
-      current.ask = null;
-      hideAsk();
-      setView(idle());
-    }
     return;
   }
   if (c.state === "clear") {
     if (current?.ask) {
       current = null;
-      hideAsk();
       if (view !== "list") setView(idle());
     }
     return;
   }
   const same = current && current.id === c.id && view !== "gone";
   const isAsk = Boolean(c.ask);
-  const wasAskId = current?.ask?.id || null;
-  if (wasAskId && box.value.trim() && wasAskId !== c.ask?.id) drafts.set(wasAskId, box.value);
   current = c;
   // A silent "needs you" or error keeps its colour; only the voice is held back.
   island.className = `island ${c.kind} ${c.state}${isAsk ? " asking" : ""}${c.soft ? " soft" : ""}`;
-  const multi = isAsk && c.total > 1;
-  $("navPrev").hidden = $("navNext").hidden = $("navPos").hidden = !multi;
-  $("navPos").textContent = multi ? `${c.pos} / ${c.total}` : "";
   if (!same) {
     setLogo($("avatar"), c.agentId);
     setLogo($("miniLogo"), c.agentId);
@@ -400,16 +207,12 @@ function show(c) {
     $("line").textContent = c.line;
     island.title = isAsk ? "" : c.line;
     $("full").querySelector(".head").title = isAsk ? "" : `Go to ${c.agentName || "the agent"}`;
-    $("close").title = isAsk ? "Fold back into the notch" : "Dismiss";
-    if (isAsk) showAsk(c);
-    else hideAsk();
   }
   $("replyBtn").hidden = !(c.reply && !isAsk);
   const chip = $("chip");
   const urgent = c.kind === "needs_input" ? "Needs you" : c.kind === "error" ? "Error" : "";
   const hush = c.state === "silent" ? REASON[c.reason] || "Silent" : "";
   let label = [urgent, hush].filter(Boolean).join(" · ");
-  if (isAsk && c.more > 0) label += ` · +${c.more} more`;
   chip.textContent = label;
   chip.hidden = !label;
   $("miniCount").textContent = isAsk && c.more > 0 ? String(c.more + 1) : "";
@@ -417,19 +220,9 @@ function show(c) {
 
   requestAnimationFrame(() => {
     reportSize();
-    if (view === "list" && hovering) return; // you're looking at the list; the row has the news
-    if (isAsk) {
-      // You asked for this one (Reply, ‹ ›): open it and put the cursor in the box.
-      if (openNext) {
-        openNext = false;
-        setView("open", true);
-        if (!$("reply").hidden) J.card("focus", true).then(() => box.focus());
-        return;
-      }
-      // A new question while you have one open: keep it open, re-arm for the new one.
-      if (view === "open") return wasAskId !== c.ask.id ? setView("open", true) : undefined;
-      return setView("mini", true);
-    }
+    if (view === "list") return; // the panel is open; its lists have the news
+    // A question waits in the notch, amber, until you click it.
+    if (isAsk) return setView("mini", true);
     if (same) return setView(view, true); // e.g. speaking -> spoken: keep the view, size and timers fresh
     if (view === "open" && hovering) return setView("open", true); // you're reading: swap the text in place
     if (view === "gone") {
@@ -462,9 +255,12 @@ function renderRest() {
   const { active, waiting, tone, mode } = agents;
   island.dataset.tone = tone;
   island.dataset.mode = mode || "on";
-  $("restCount").textContent = active ? String(active) : "";
+  // Amber: how many things the panel has waiting for you. Otherwise how many agents run.
+  const needs = P.count();
+  $("restCount").textContent = needs ? String(needs) : active ? String(active) : "";
+  $("restCount").classList.toggle("needs", needs > 0);
   const bits = [active ? `${active} running` : "No agents running"];
-  if (waiting) bits.push(`${waiting} need${waiting === 1 ? "s" : ""} you`);
+  if (needs || waiting) bits.unshift(`${needs || waiting} need${(needs || waiting) === 1 ? "s" : ""} you`);
   if (mode && mode !== "on") bits.push(mode === "off" ? "Earpiece is off" : "Quiet");
   $("rest").title = `Earpiece: ${bits.join(", ")}`;
   if (view === "rest") setView("rest", true); // the pill's width follows the count off-notch
@@ -485,7 +281,16 @@ function renderAgents() {
       mt.append(el("b", "", r.agent), el("span", "pj", r.project || ""), el("span", "st", STATUS[r.status] || r.status), el("span", "age", r.updated ? ago(now - skew - r.updated) : ""));
       tx.append(mt);
       if (r.lastLine) tx.append(el("p", "ln", r.lastLine));
-      li.append(av, tx);
+      // ×: off the list (it comes back with the agent's next update).
+      const x = el("button", "rm", "×");
+      x.title = "Clear from the list";
+      x.setAttribute("aria-label", `Clear ${r.agent}${r.project ? ` · ${r.project}` : ""}`);
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        li.remove();
+        J.session("forget", r.agentId, r.session).catch(() => {});
+      });
+      li.append(av, tx, x);
       li.addEventListener("click", (e) => {
         e.stopPropagation();
         J.card("jump", { agent: r.agentId, session: r.session });
@@ -495,7 +300,7 @@ function renderAgents() {
     }),
   );
   $("agentsEmpty").hidden = agents.rows.length > 0;
-  $("agentsSub").textContent = agents.active ? `${agents.active} running` : "";
+  $("agentsSub").textContent = agents.active ? String(agents.active) : "";
   $("agentsMore").textContent = agents.more ? `+${agents.more} more` : "";
   for (const b of $("modes").querySelectorAll("button")) b.classList.toggle("on", b.dataset.mode === (agents.mode || "on"));
 }
@@ -536,6 +341,8 @@ J.onCard(show);
 J.onGeom?.(applyGeom);
 J.onAgents?.(onAgents);
 J.onRest?.(setRest);
+J.onInbox?.((l) => (P.update(l), renderRest()));
+J.onPanel?.((m) => openPanel(m?.focus || null));
 applyGeom(geom);
 
 function pointerEntered() {
@@ -558,16 +365,20 @@ island.addEventListener("mouseleave", () => {
 J.onPointer?.((inside) => {
   if (!inside) return pointerLeft();
   hovering = true;
+  if (view === "list") touched = true;
   clearTimeout(timer);
 });
 island.addEventListener("click", (e) => {
   pointerEntered();
-  if (view === "rest") return setView("list");
+  if (view === "rest") return openPanel();
   if (view === "list") return; // rows and buttons handle their own clicks
   if (!current) return;
-  if (view === "mini") return setView("open");
-  if (e.target.closest("#close")) return setView(idle());
-  if (current.ask) return; // only the buttons act on a question
+  if (view === "mini") return current.ask ? openPanel(current.ask.id) : setView("open");
+  // × while a line is playing stops it too, like ■: dismissing it means you don't want to hear it.
+  if (e.target.closest("#close")) {
+    if (current.state === "speaking") J.card("stop");
+    return setView(idle());
+  }
   if (e.target.closest("#stop")) return J.card("stop");
   if (e.target.closest(".head")) {
     // Take you to the agent's terminal tab or window; the app opens the dashboard if it can't.

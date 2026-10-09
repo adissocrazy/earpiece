@@ -9,7 +9,8 @@
 <body>
   <!-- The island lives in the notch (or a flat-topped pill at the top centre when there is none).
        At rest it is the Earpiece mark, a count and a status dot either side of the notch; a click
-       drops down the list of agents. A line peeks it open for a moment, then folds it back. -->
+       drops down the panel: what needs you, and your agents. A line peeks it open for a moment,
+       then folds it back. -->
   <div class="island" id="card" role="status" aria-live="polite" data-view="gone">
     <span class="shoulder left" aria-hidden="true"></span><span class="shoulder right" aria-hidden="true"></span>
 
@@ -20,18 +21,29 @@
       <span class="wing right"><span class="rest-dot" aria-hidden="true"></span></span>
     </div>
 
-    <div class="agents" id="agents">
+    <div class="agents" id="agents" data-tab="needs">
       <div class="agents-head">
-        <b>Agents</b><span class="sub" id="agentsSub"></span>
+        <div class="tabs" role="tablist">
+          <button class="tab on" id="tabNeeds" role="tab" title="Questions and finished work (Tab switches)">Needs you <span class="n" id="needsCount" hidden></span></button>
+          <button class="tab" id="tabAgents" role="tab" title="Every agent running or recently done (Tab switches)">Agents <span class="m" id="agentsSub"></span></button>
+        </div>
         <div class="modes" id="modes" role="group" aria-label="Earpiece mode">
           <button data-mode="on" title="Read lines aloud">On</button>
           <button data-mode="quiet" title="Only “needs you” lines, for an hour">Quiet</button>
           <button data-mode="off" title="Nothing is read aloud">Off</button>
         </div>
       </div>
-      <ul class="rows" id="agentRows"></ul>
-      <p class="empty" id="agentsEmpty">No agents running. They show up here as soon as one starts.</p>
-      <div class="agents-foot"><span class="more" id="agentsMore"></span><button class="link" id="openDash">Open dashboard</button></div>
+      <div class="needs" id="needs"></div>
+      <div class="agents-tab" id="agentsTab">
+        <ul class="rows" id="agentRows"></ul>
+        <p class="empty" id="agentsEmpty">No agents running. They show up here as soon as one starts.</p>
+      </div>
+      <div class="undo" id="undo" hidden><span id="undoText"></span><span class="esc"><kbd>esc</kbd> undo</span><div class="bar"></div></div>
+      <p class="err" id="panelErr" hidden></p>
+      <div class="agents-foot">
+        <span class="keys"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> answer <kbd>J</kbd><kbd>K</kbd> move <kbd>R</kbd> reply <kbd>E</kbd> clear</span>
+        <span class="more" id="agentsMore"></span><button class="link" id="openDash">Open dashboard</button>
+      </div>
     </div>
 
     <div class="mini" id="mini">
@@ -46,7 +58,6 @@
 
     <div class="full" id="full">
       <div class="head">
-        <button class="nav" id="navPrev" title="Previous session waiting on you (⌥←)" aria-label="Previous waiting session" hidden><svg viewBox="0 0 12 12"><path d="M7.5 2.5 4 6l3.5 3.5" /></svg></button>
         <div class="avatar" id="avatar"><span class="ring"></span></div>
         <div class="text">
           <div class="meta"><b id="who"></b><span id="project"></span><span class="chip" id="chip" hidden></span></div>
@@ -54,38 +65,18 @@
         </div>
         <div class="side">
           <span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-          <span class="navpos" id="navPos" hidden></span>
-          <button class="nav" id="navNext" title="Next session waiting on you (⌥→)" aria-label="Next waiting session" hidden><svg viewBox="0 0 12 12"><path d="M4.5 2.5 8 6l-3.5 3.5" /></svg></button>
           <button class="pill" id="replyBtn" title="Reply to this agent" hidden>Reply</button>
           <button class="btn" id="stop" title="Stop talking" aria-label="Stop talking"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" /></svg></button>
           <button class="btn" id="close" title="Dismiss" aria-label="Dismiss"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" /></svg></button>
         </div>
       </div>
-      <div class="qa" id="ask" hidden>
-        <pre class="detail" id="detail" hidden></pre>
-        <p class="why" id="why" hidden></p>
-        <p class="why" id="rule" hidden></p>
-        <div class="choices" id="choices">
-          <button class="act allow" id="allow">Allow</button>
-          <button class="act always" id="always" hidden>Always allow</button>
-          <button class="act deny" id="deny">Deny</button>
-          <button class="act terminal" id="terminal" title="Answer at the terminal prompt instead, and go there">In terminal</button>
-        </div>
-        <div class="reply" id="reply" hidden>
-          <textarea id="replyText" rows="2" maxlength="4000" spellcheck="false"></textarea>
-          <div class="row">
-            <button class="act terminal" id="replyTerminal" title="Answer in the terminal instead, and go there">In terminal</button>
-            <button class="act mic" id="mic" title="Speak your reply (it lands in the box; you press Send)" aria-label="Speak your reply" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" /><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2" /></svg></button>
-            <button class="act allow" id="send">Send</button>
-          </div>
-        </div>
-        <p class="err" id="askErr" hidden></p>
-        <div class="timer" aria-hidden="true"><i id="timerBar"></i></div>
-      </div>
     </div>
     </div>
   </div>
   <script src="logos.js"></script>
+  <script src="hold.js"></script>
+  <script src="mic.js"></script>
+  <script src="panel.js"></script>
   <script src="card.js"></script>
 </body>
 </html>
