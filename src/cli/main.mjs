@@ -32,7 +32,7 @@ const pkg = readJson(path.join(ROOT, "package.json"), {});
 export const HELP = `earpiece ${pkg.version || ""} — spoken pings for terminal coding agents
 
 Setup
-  earpiece install [--only claude-code,codex,claude-desktop] [--chain] [--env path/.env] [--hub | --node]
+  earpiece install [--only claude-code,codex,claude-desktop,openclaw,hermes] [--chain] [--env path/.env] [--hub | --node]
                                         hooks already set by the Mac app stay on the app (--node overrides)
   earpiece env <path/.env>              where API keys are read from (the app uses this too)
   earpiece uninstall

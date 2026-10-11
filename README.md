@@ -30,6 +30,14 @@ earpiece test                   # you should hear Earpiece
 
 Restart any running Claude Code or Codex sessions so they pick up the hooks.
 
+To connect the newer agent runtimes:
+
+```bash
+earpiece install --only openclaw,hermes
+```
+
+This installs an OpenClaw plugin under `~/.openclaw/extensions/earpiece` and a Hermes gateway hook under `$HERMES_HOME/hooks/earpiece`. OpenClaw is enabled automatically when its CLI is available; otherwise run the printed `openclaw plugins install` command. Restart the Hermes gateway after installation. Both connectors only send local lifecycle events to the Earpiece process; they do not send prompts or code to a remote service.
+
 Voice and summaries get better with API keys, but both are optional. Put them in your environment or in a `.env` file (see `.env.example`), then point Earpiece at it with `earpiece install --env /path/to/.env`:
 
 | Key | Used for | Without it |
@@ -47,6 +55,8 @@ Keys are read at call time and never written to logs. With an OpenAI key, the ta
 | Claude Code | `UserPromptSubmit`, `Stop`, `Notification` and `PostToolUse` hooks in `~/.claude/settings.json` | turn start/end, permission prompts, idle, and tool activity so answered prompts stay quiet |
 | Codex CLI | top-level `notify` in `~/.codex/config.toml` | turn end |
 | Claude Desktop (chats, Cowork) | a local MCP server (`earpiece mcp`) in `claude_desktop_config.json`; Claude calls its `earpiece_notify` tool and writes the line itself | done, needs you, error |
+| OpenClaw | a local plugin using OpenClaw's `agent_end`, `session_start` and `session_end` hooks | turn end, error and session lifecycle |
+| Hermes Agent | a trusted gateway hook under `$HERMES_HOME/hooks/earpiece` | turn start/end, tool activity and session lifecycle |
 | Anything else | `earpiece emit` or `earpiece run` | whatever you send |
 
 If Codex already has a `notify` command, the installer leaves it alone and tells you. `earpiece install --chain` keeps your command and adds Earpiece in front of it; `earpiece uninstall` puts yours back. The chain is safe with wrappers that call their own "previous notify" command, even when that command is Earpiece: each Codex turn is spoken once.
@@ -85,7 +95,7 @@ STATUS    AGENT         PROJECT               AGE   LAST
 ## Commands
 
 ```text
-earpiece install [--only claude-code,codex,claude-desktop] [--chain] [--env path/.env] [--hub | --node]
+earpiece install [--only claude-code,codex,claude-desktop,openclaw,hermes] [--chain] [--env path/.env] [--hub | --node]
 earpiece env /path/to/.env   # where API keys are read from
 earpiece uninstall
 earpiece test [--provider smallest|openai|say] [--agent id]
