@@ -36,7 +36,29 @@ To connect the newer agent runtimes:
 earpiece install --only openclaw,hermes
 ```
 
-This installs an OpenClaw plugin under `~/.openclaw/extensions/earpiece` and a Hermes gateway hook under `$HERMES_HOME/hooks/earpiece`. OpenClaw is enabled automatically when its CLI is available; otherwise run the printed `openclaw plugins install` command. Restart the Hermes gateway after installation. Both connectors only send local lifecycle events to the Earpiece process; they do not send prompts or code to a remote service.
+This installs local adapters for OpenClaw and Hermes. For remote agents, enable the HTTP hub and configure delivery routes:
+
+```bash
+# Store the bearer token in ~/.earpiece/.env or the env file configured with `earpiece env`
+echo 'EARPIECE_REMOTE_TOKEN=replace-with-a-long-random-token' >> ~/.earpiece/.env
+
+earpiece remote on
+earpiece route add whatsapp --to hermes:whatsapp:+15551234567 --agents hermes,openclaw --types turn_end,error
+earpiece route add ops --to hermes:telegram:-1001234567890 --types error
+
+earpiece serve
+```
+
+Remote agents POST normalized events to `http://<hub-host>:8765/remote/events` with `Authorization: Bearer <token>`. For example:
+
+```bash
+curl -X POST http://localhost:8765/remote/events \\
+  -H "Authorization: Bearer $EARPIECE_REMOTE_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"agent":"openclaw","session":"build-42","type":"turn_end","project":"checkout","text":"Finished the checkout fix and tests pass."}'
+```
+
+Routes beginning with `hermes:` use Hermes' configured outbound transports, so WhatsApp, Telegram, Discord, Slack, and other Hermes channels stay managed by Hermes. Routes beginning with `webhook:` post the update as JSON to a custom destination. Earpiece does not store or duplicate those channel credentials.
 
 Voice and summaries get better with API keys, but both are optional. Put them in your environment or in a `.env` file (see `.env.example`), then point Earpiece at it with `earpiece install --env /path/to/.env`:
 

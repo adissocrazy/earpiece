@@ -4,8 +4,9 @@
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import crypto from "node:crypto";
 import { getAdapter } from "../adapters/index.mjs";
-import { config } from "../config.mjs";
+import { config, apiKey } from "../config.mjs";
 import { P } from "../paths.mjs";
 import { classifyTurn } from "../summary/turn.mjs";
 import { ensureDirs, log } from "../util.mjs";
@@ -62,11 +63,21 @@ const parse = (raw) => {
   }
 };
 
+function remoteAuthorized(req, remote = {}) {
+  const envName = remote.tokenEnv || "EARPIECE_REMOTE_TOKEN";
+  const expected = apiKey(config(), envName);
+  if (!expected) return false;
+  const supplied = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "") || String(req.headers["x-earpiece-token"] || "");
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 /**
  * Start the hub server. Resolves once it is listening.
  * `onEvent(info)` is called after each accepted request (the app uses it to refresh the tray).
  */
-export async function startHubServer({ socket = P.socket, deps = {}, onEvent = () => {}, version = "", asks = null, origins = createOriginTracker() } = {}) {
+export async function startHubServer({ socket = P.socket, deps = {}, onEvent = () => {}, version = "", asks = null, origins = createOriginTracker(), remote = config().remote } = {}) {
   ensureDirs();
   if (fs.existsSync(socket)) {
     if (await isLive(socket)) throw Object.assign(new Error(`another Earpiece hub is already running on ${socket}`), { code: "EADDRINUSE" });
@@ -105,6 +116,15 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
       if (req.method === "GET" && url.pathname === "/health") return reply(200, { ok: true, pid: process.pid, version });
       if (req.method !== "POST") return reply(405, { error: "method not allowed" });
       const raw = await readBody(req);
+      if (remote?.enabled && req.method === "POST" && (url.pathname === "/remote/events" || url.pathname === "/v1/events")) {
+        if (!remoteAuthorized(req, remote)) return reply(401, { error: "unauthorized" });
+        const payload = parse(raw);
+        const incoming = payload.event && typeof payload.event === "object" ? { ...payload.event, ...payload } : payload;
+        const agent = String(incoming.agent || incoming.source?.agent || incoming.source || "remote");
+        const event = normalizeEvent({ ...incoming, agent }, agent);
+        run("remote", () => ingestEvent(event, opts));
+        return reply(202, { accepted: true, event_id: incoming.delivery_id || incoming.event_id || null });
+      }
       const hook = /^\/hook\/([^/]+)$/.exec(url.pathname);
       if (hook) {
         const agent = decodeURIComponent(hook[1]);
@@ -228,22 +248,57 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
     }
   });
 
+  let remoteServer = null;
+  if (remote?.enabled) {
+    remoteServer = http.createServer(async (req, res) => {
+      const reply = (status, body) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+      try {
+        const url = new URL(req.url, "http://earpiece-remote");
+        if (req.method === "GET" && url.pathname === "/health") return reply(200, { ok: true, remote: true, pid: process.pid, version });
+        if (req.method !== "POST" || !["/remote/events", "/v1/events"].includes(url.pathname)) return reply(404, { error: "not found" });
+        if (!remoteAuthorized(req, remote)) return reply(401, { error: "unauthorized" });
+        const payload = parse(await readBody(req));
+        const incoming = payload.event && typeof payload.event === "object" ? { ...payload.event, ...payload } : payload;
+        const agent = String(incoming.agent || incoming.source?.agent || incoming.source || "remote");
+        if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
+        const event = normalizeEvent({ ...incoming, agent }, agent);
+        run("remote", () => ingestEvent(event, opts));
+        return reply(202, { accepted: true, event_id: incoming.delivery_id || incoming.event_id || null });
+      } catch (e) {
+        return reply(e.status || 500, { error: e.message });
+      }
+    });
+  }
+
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(socket, () => (server.off("error", reject), resolve()));
   });
   fs.chmodSync(socket, 0o600);
-  log({ hub: "listening", socket, pid: process.pid });
+  let remoteAddress = null;
+  if (remoteServer) {
+    await new Promise((resolve, reject) => {
+      const onError = (e) => (remoteServer.off("listening", onListening), reject(e));
+      const onListening = () => (remoteServer.off("error", onError), remoteAddress = remoteServer.address(), resolve());
+      remoteServer.once("error", onError);
+      remoteServer.once("listening", onListening);
+      remoteServer.listen(Number(remote.port) || 8765, remote.host || "127.0.0.1");
+    });
+  }
+  log({ hub: "listening", socket, pid: process.pid, remote: remoteAddress ? { host: remoteAddress.address, port: remoteAddress.port } : null });
 
   return {
     socket,
+    remote: remoteAddress,
     server,
+    remoteServer,
     /** Wait for every accepted event to finish (tests, clean shutdown). */
     idle: () => Promise.all([...pending]),
     asks,
     async close() {
       asks?.closeAll(); // waiting hooks get "nothing" and fall back to the terminal prompt
       await new Promise((r) => server.close(r));
+      if (remoteServer) await new Promise((r) => remoteServer.close(r));
       await Promise.all([...pending]);
       fs.rmSync(socket, { force: true });
     },

@@ -34,7 +34,9 @@ export const HELP = `earpiece ${pkg.version || ""} — spoken pings for terminal
 Setup
   earpiece install [--only claude-code,codex,claude-desktop,openclaw,hermes] [--chain] [--env path/.env] [--hub | --node]
                                         hooks already set by the Mac app stay on the app (--node overrides)
-  earpiece env <path/.env>              where API keys are read from (the app uses this too)
+  earpiece route list|add|remove    manage remote output destinations
+  earpiece remote on|off|status     expose the remote HTTP event hub
+  earpiece env <path/.env>          where API keys and remote secrets are read from
   earpiece uninstall
   earpiece test [--provider smallest|openai|say] [--agent id]
 
@@ -348,7 +350,7 @@ function cmdStop() {
 // The desktop app does the same thing; this is for people who only want the CLI.
 async function cmdServe() {
   const hub = await startHubServer();
-  console.log(`earpiece: hub listening on ${hub.socket}. Ctrl-C to stop.`);
+  console.log(`earpiece: hub listening on ${hub.socket}${hub.remote ? ` and remote HTTP on http://${hub.remote.address}:${hub.remote.port}` : ""}. Ctrl-C to stop.`);
   const bye = () => hub.close().then(() => process.exit(0));
   process.on("SIGINT", bye);
   process.on("SIGTERM", bye);
@@ -394,6 +396,55 @@ function cmdQuietHours(rest) {
   console.log(`earpiece: ${describeQuiet(qh)}`);
 }
 
+function cmdRemote(rest) {
+  const action = (rest[0] || "status").toLowerCase();
+  const cfg = config();
+  if (action === "on" || action === "off") {
+    updateConfig({ remote: { enabled: action === "on" } });
+    return console.log(`✓ Remote hub ${action}. Restart \`earpiece serve\` or the Mac app to apply it.`);
+  }
+  if (action !== "status") {
+    process.exitCode = 2;
+    return console.error("usage: earpiece remote on|off|status");
+  }
+  console.log(JSON.stringify({ ...cfg.remote, tokenConfigured: Boolean(apiKey(cfg, cfg.remote.tokenEnv || "EARPIECE_REMOTE_TOKEN")) }, null, 2));
+}
+
+function cmdRoute(rest) {
+  const action = (rest[0] || "list").toLowerCase();
+  const cfg = config();
+  const routes = Array.isArray(cfg.remote.routes) ? cfg.remote.routes : [];
+  if (action === "list") return console.log(JSON.stringify(routes, null, 2));
+  if (action === "remove") {
+    const name = rest[1];
+    if (!name) { process.exitCode = 2; return console.error("usage: earpiece route remove <name>"); }
+    const next = routes.filter((r) => r.name !== name);
+    if (next.length === routes.length) { process.exitCode = 1; return console.error(`route not found: ${name}`); }
+    updateConfig({ remote: { routes: next } });
+    return console.log(`✓ Removed route ${name}`);
+  }
+  if (action === "add") {
+    const { flags, words } = parseFlags(rest.slice(1), ["to", "agents", "types"]);
+    const [name] = words;
+    const targets = String(flags.to || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!name || !targets.length || targets.some((t) => !/^((hermes|webhook):).+/.test(t))) {
+      process.exitCode = 2;
+      return console.error("usage: earpiece route add <name> --to hermes:whatsapp:+1555...[,hermes:telegram] [--agents hermes,openclaw] [--types turn_end,error]");
+    }
+    const route = {
+      name,
+      targets,
+      ...(flags.agents ? { agents: String(flags.agents).split(",").map((s) => s.trim()).filter(Boolean) } : {}),
+      ...(flags.types ? { types: String(flags.types).split(",").map((s) => s.trim()).filter(Boolean) } : {}),
+    };
+    const next = [...routes.filter((r) => r.name !== name), route];
+    updateConfig({ remote: { enabled: true, routes: next } });
+    return console.log(`✓ Route ${name} saved. Restart the hub to apply it.`);
+  }
+  process.exitCode = 2;
+  console.error("usage: earpiece route list|add|remove");
+}
+
 function cmdStatus() {
   const cfg = config();
   const all = fs.existsSync(P.log) ? fs.readFileSync(P.log, "utf8").trim().split("\n").filter(Boolean) : [];
@@ -413,6 +464,7 @@ function cmdStatus() {
     speakLanguage: cfg.speakLanguage,
     summaryProvider: cfg.summaryProvider,
     adapters: Object.fromEntries(listAdapters().map((a) => [a.id, a.isInstalled?.() ? "installed" : "not installed"])),
+    remote: { ...cfg.remote, tokenConfigured: Boolean(apiKey(cfg, cfg.remote.tokenEnv || "EARPIECE_REMOTE_TOKEN")) },
     agentOverrides: cfg.agents,
     lastEngine: lastSpoke ? `${lastSpoke.engine}${lastSpoke.ms ? ` (${lastSpoke.ms} ms)` : ""}` : null,
     audioPlayer: ["afplay", "paplay", "aplay", "ffplay"].find(which) || null,
@@ -622,6 +674,10 @@ export async function main(argv) {
       fs.rmSync(P.appClosed, { force: true }); // also undoes a Quit of the Mac app
       fs.rmSync(P.appPid, { force: true });
       return console.log("earpiece: on");
+    case "route":
+      return cmdRoute(rest);
+    case "remote":
+      return cmdRemote(rest);
     case "status":
       return cmdStatus();
     case "doctor":

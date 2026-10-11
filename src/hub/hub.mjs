@@ -19,6 +19,7 @@ import { classifyTurn } from "../summary/turn.mjs";
 import { ensureDirs, log, now, projectName, readJson } from "../util.mjs";
 import { speak } from "../voice/speak.mjs";
 import { endsWithQuestion, normalizeEvent } from "./events.mjs";
+import { deliverRoutes } from "../outputs/router.mjs";
 import { forgetSession, getSession, pruneSessions, updateSession } from "./sessions.mjs";
 
 /** Entry point for every agent. Returns the normalized events (handy for tests). */
@@ -202,6 +203,11 @@ export async function processEvent(input, deps = {}) {
   );
 
   if (!line) return { skipped: "nothing_to_say" };
+  // Remote delivery is independent of local speech. A muted/quiet Earpiece can still
+  // publish updates to explicitly configured Hermes channels or webhooks.
+  if (config().remote?.routes?.length) {
+    deliverRoutes({ event: ev, text: line, project, agent: ev.agent, session: ev.session }, config()).catch((e) => log({ error: `route delivery: ${e.message}`, agent: ev.agent }));
+  }
   if (!cfg.enabled) {
     showCard({ line, kind: say.kind, agent: ev.agent, project, session: ev.session, state: "silent", reason: "agent_disabled" });
     log({ skipped: "agent_disabled", line, ...meta });
