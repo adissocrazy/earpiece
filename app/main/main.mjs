@@ -340,16 +340,19 @@ function modeInfo() {
 
 function state() {
   const cfg = lib.config();
+  const cleared = inboxCleared();
   const rows = lib.listSessions({ sinceMs: DAY }).map((s) => {
     const a = lib.getAdapter(s.agent);
     const agent = lib.agentConfig(cfg, s.agent).label || a.name;
     const project = s.project || lib.projectName(s.cwd);
+    const seen = dismissed(s, cleared);
     return {
       agent,
       agentId: s.agent,
       session: s.session,
       project,
-      status: s.status || "idle",
+      status: seen ? "idle" : s.status || "idle",
+      seen,
       updated: s.updated || 0,
       where: s.origin ? lib.describeOrigin(s.origin) : "",
       run: s.origin?.run || pro?.runOf?.(s) || null,
@@ -539,7 +542,9 @@ function createCardWin() {
     hiddenInMissionControl: true,
     // Frameless windows may sit in the menu bar strip; this stops macOS pushing it below.
     enableLargerThanScreen: true,
-    webPreferences: webPreferences(),
+    // macOS occlusion tracking (Electron 40.9+) can mark this transparent click-through window as
+    // hidden; throttled, its fade-ins stall at opacity 0 and the island shows up empty (electron#51718).
+    webPreferences: { ...webPreferences(), backgroundThrottling: false },
   });
   // "status" is above the menu bar, so the island can sit over it, in the notch.
   cardWin.setAlwaysOnTop(true, "status");
@@ -641,10 +646,18 @@ function sendAgents(s) {
 const inboxFile = () => path.join(app.getPath("userData"), "inbox.json");
 const inboxCleared = () => lib.readJson(inboxFile(), {}).cleared || {};
 
+// Every surface (notch, menu bar, popover, panel) reads state(), so "you dealt with it" is decided
+// once, here: you clicked it or cleared it since it last changed, or you answered a Codex question
+// in Codex itself (Codex sends nothing when a new turn starts).
+function dismissed(s, cleared) {
+  const at = s.updated || 0;
+  if (asks?.list().some((a) => !a.soft && a.agent === s.agent && a.session === s.session)) return false; // still asking
+  if ((cleared[`${s.agent}:${s.session}`] ?? -1) >= at) return true;
+  return s.agent === "codex" && s.status === "waiting" && (lib.codexTurnStarted(s.session) || 0) > at;
+}
+
 function inboxList(st = state()) {
-  const answered = {}; // a Codex question you already answered in Codex itself
-  for (const s of st.sessions) if (s.agentId === "codex" && s.status === "waiting") answered[`codex:${s.session}`] = lib.codexTurnStarted(s.session);
-  return lib.buildInbox({ asks: asks?.list() || [], sessions: st.sessions, cleared: inboxCleared(), answered, label: agentLabel });
+  return lib.buildInbox({ asks: asks?.list() || [], sessions: st.sessions.filter((s) => !s.seen), label: agentLabel });
 }
 
 let inboxTimer = null;
@@ -780,7 +793,7 @@ function askPayload(hard) {
 }
 
 function confirmText(ask, answer) {
-  if (ask.kind !== "permission") return "Reply sent";
+  if (ask.kind !== "permission") return "Understood, continuing in the background";
   const what = ask.tool || "request";
   if (answer.behavior === "deny") return `Denied ${what}`;
   return answer.behavior === "always" ? `Always allowed ${what}` : `Allowed ${what}`;
@@ -791,6 +804,8 @@ function onAsksChange(list, change) {
     pro?.onAsks?.(list, change);
   } catch {}
   sendInbox();
+  // An agent is waiting on you in the notch: play the "needs you" tone, card or not.
+  if (change.type === "open" && !change.ask.soft && !lib.policyBlock("needs_input", lib.config())) core("src/voice/speak.mjs").then((m) => m.chime("needs_input")).catch(() => {});
   if (prefs.get().showCard === false) return;
   const hard = list.filter((a) => !a.soft);
   // A question is waiting: the island stays amber in the notch until you open the panel.
@@ -902,13 +917,12 @@ async function inboxAct(v) {
         asks.cancel(it.id, "terminal");
         jumpToSession(it.agentId, it.session, { fallback: false });
         break;
-      case "open": // opening a "needs you" item counts as seeing it
-        if (it.kind === "terminal") markSeen(it, st);
+      case "open": // opening an item counts as seeing it (jumpToSession marks it)
         jumpToSession(it.agentId, it.session, { fallback: false });
         break;
       case "clear":
         if (!it.id.startsWith("s:")) throw new Error("Answer it, or press O to answer it in its terminal.");
-        markSeen(it, st);
+        markSeen(it);
         break;
       default:
         throw new Error("unknown action");
@@ -922,12 +936,12 @@ async function inboxAct(v) {
 }
 
 // Off the list until the session moves on. Marks older than two days are dropped.
-function markSeen(it, st) {
-  const s = st.sessions.find((x) => x.agentId === it.agentId && x.session === it.session);
+function markSeen(it) {
+  const s = lib.getSession(it.agentId, it.session);
   if (!s) return;
-  const cleared = Object.entries({ ...inboxCleared(), [`${s.agentId}:${s.session}`]: s.updated || 0 }).filter(([, at]) => at > Date.now() - 2 * 86400_000);
+  const cleared = Object.entries({ ...inboxCleared(), [`${s.agent}:${s.session}`]: s.updated || 0 }).filter(([, at]) => at > Date.now() - 2 * 86400_000);
   lib.writeJson(inboxFile(), { cleared: Object.fromEntries(cleared) });
-  sendInbox();
+  refresh(); // notch, menu bar and panel all drop it
 }
 
 function setMode(mode, minutes = 0) {
@@ -1166,6 +1180,7 @@ async function jumpToSession(agent, session, { fallback = true } = {}) {
   if (cardWin?.isFocusable()) focusReturn = false; // the panel folds after this; don't refocus the app before
   const a = agent ? String(agent) : null;
   const s = a && session ? lib.getSession(a, String(session)) : null;
+  if (s) markSeen({ agentId: a, session: String(session) }); // clicking an agent counts as dealing with it
   // Started by Earpiece: its terminal is a window of ours.
   const runId = s?.origin?.run || pro?.runOf?.(s);
   if (runId && pro?.openRun?.(runId)) return { ok: true, how: "earpiece-run", precision: "tab" };
