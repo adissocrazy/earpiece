@@ -42,7 +42,7 @@ function pluginSource(node, bin) {
 }
 
 const PACKAGE = JSON.stringify({ name: "earpiece-openclaw", private: true, type: "module", openclaw: { extensions: ["./index.mjs"] } }, null, 2) + "\n";
-const MANIFEST = JSON.stringify({ id: "earpiece", name: "Earpiece", description: "Send OpenClaw lifecycle events to Earpiece." }, null, 2) + "\n";
+const MANIFEST = JSON.stringify({ id: "earpiece", name: "Earpiece", description: "Send OpenClaw lifecycle events to Earpiece.", activation: { onStartup: true }, configSchema: { type: "object", additionalProperties: false } }, null, 2) + "\n";
 
 export default {
   id: "openclaw",
@@ -71,9 +71,12 @@ export default {
     }
     const installed = spawnSync("openclaw", ["plugins", "install", "--link", dir, "--force"], { stdio: "ignore" });
     const enabled = installed.status === 0 ? spawnSync("openclaw", ["plugins", "enable", "earpiece"], { stdio: "ignore" }) : null;
+    const access = enabled?.status === 0 ? spawnSync("openclaw", ["config", "set", "plugins.entries.earpiece.hooks.allowConversationAccess", "true"], { stdio: "ignore" }) : null;
     const suffix = backups.length ? ` (backup: ${backups.map((f) => path.basename(f)).join(", ")})` : "";
+    if (installed.status === 0 && enabled?.status === 0 && access?.status === 0)
+      return [`✓ OpenClaw Earpiece plugin installed, enabled, and granted conversation access at ${dir}${suffix}`, "  Run `openclaw plugins reload` if the Gateway is already running."];
     if (installed.status === 0 && enabled?.status === 0)
-      return [`✓ OpenClaw Earpiece plugin installed and enabled at ${dir}${suffix}`, "  Run `openclaw plugins reload` if the Gateway is already running."];
-    return [`✓ OpenClaw Earpiece plugin written to ${dir}${suffix}`, "  Run: openclaw plugins install --link " + dir + " --force && openclaw plugins enable earpiece"];
+      return [`✓ OpenClaw Earpiece plugin installed and enabled at ${dir}${suffix}`, "  Run: openclaw config set plugins.entries.earpiece.hooks.allowConversationAccess true", "  Then run `openclaw plugins reload` if the Gateway is already running."];
+    return [`✓ OpenClaw Earpiece plugin written to ${dir}${suffix}`, "  Run: openclaw plugins install --link " + dir + " --force && openclaw plugins enable earpiece", "  Then grant conversation access with: openclaw config set plugins.entries.earpiece.hooks.allowConversationAccess true"];
   },
 };
