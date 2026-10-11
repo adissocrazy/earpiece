@@ -29,6 +29,7 @@ export const P = {
   env: path.join(HOME, ".env"),
   mode: path.join(HOME, "mode.json"),
   last: path.join(HOME, "last-spoken.json"),
+  tone: path.join(HOME, "last-tone.json"),
   card: path.join(HOME, "card.json"), // what the app's floating card shows
   flushed: path.join(HOME, "flushed.json"),
   log: path.join(HOME, "log.jsonl"),

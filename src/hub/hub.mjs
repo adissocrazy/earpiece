@@ -15,10 +15,11 @@ import { agentConfig, config } from "../config.mjs";
 import { phrase } from "../i18n.mjs";
 import { BIN, P } from "../paths.mjs";
 import { summarize } from "../summary/summarize.mjs";
+import { classifyTurn } from "../summary/turn.mjs";
 import { ensureDirs, log, now, projectName, readJson } from "../util.mjs";
 import { speak } from "../voice/speak.mjs";
 import { endsWithQuestion, normalizeEvent } from "./events.mjs";
-import { getSession, pruneSessions, updateSession } from "./sessions.mjs";
+import { forgetSession, getSession, pruneSessions, updateSession } from "./sessions.mjs";
 
 /** Entry point for every agent. Returns the normalized events (handy for tests). */
 export async function ingest(agentId, payload, { deps = {}, foreground } = {}) {
@@ -41,13 +42,20 @@ export async function ingestEvent(ev, { foreground = process.env.EARPIECE_FOREGR
       project: ev.project || getSession(ev.agent, ev.session)?.project || projectName(ev.cwd),
       turnStart: ev.at,
       spokeAfterStop: false,
-      lastEvent: "turn_start",
+      lastEvent: ev.lastEvent || "turn_start", // "answered": you answered from the card or the notch
       activeAt: ev.at,
       activeTool: null,
     });
     if (Math.random() < 0.05) pruneSessions();
     return { recorded: "turn_start" };
   }
+  if (ev.type === "session_end") {
+    forgetSession(ev.agent, ev.session);
+    return { recorded: "session_end" };
+  }
+  // The turn a card answer continued (Claude Code's Stop with stop_hook_active). Any other
+  // Stop-hook loop stays silent, as before.
+  if (ev.continued && getSession(ev.agent, ev.session)?.lastEvent !== "answered") return { skipped: "continued" };
   if (ev.type === "activity") {
     // Runs on every tool call, so it only touches the session file.
     updateSession(ev.agent, ev.session, (cur) => ({
@@ -134,13 +142,14 @@ export async function processEvent(input, deps = {}) {
         updateSession(ev.agent, ev.session, guarded(ev, { ...base, ...patch, status: "done", turnStart: null }));
         return { skipped: "short_turn" };
       }
-      const question = endsWithQuestion(ev.text);
-      status = question ? "waiting" : "done";
-      if (ev.line) say = { text: ev.line, kind: question ? "needs_input" : "done", lang: ev.lang || "en" };
-      else {
-        const s = await summarize(ev.text, cfg, { fetch: deps.fetch });
-        say = { text: `${who}. ${s.line}`, kind: question ? "needs_input" : "done", lang: s.lang, via: s.via };
+      if (ev.line) {
+        const question = endsWithQuestion(ev.text);
+        say = { text: ev.line, kind: question ? "needs_input" : "done", lang: ev.lang || "en" };
+      } else {
+        const [turn, s] = await Promise.all([classifyTurn(ev.text, cfg, { fetch: deps.fetch }), summarize(ev.text, cfg, { fetch: deps.fetch })]);
+        say = { text: `${who}. ${s.line}`, kind: turn === "ask" ? "needs_input" : "done", lang: s.lang, via: s.via, background: turn === "progress" };
       }
+      status = say.kind === "needs_input" ? "waiting" : "done";
       patch.turnStart = null;
       break;
     }
@@ -197,6 +206,12 @@ export async function processEvent(input, deps = {}) {
     showCard({ line, kind: say.kind, agent: ev.agent, project, session: ev.session, state: "silent", reason: "agent_disabled" });
     log({ skipped: "agent_disabled", line, ...meta });
     return { skipped: "agent_disabled" };
+  }
+  if (say.background) {
+    // A progress note: nothing for you to do, so it goes on the card without a voice.
+    showCard({ line, kind: say.kind, agent: ev.agent, project, session: ev.session, state: "silent", reason: "background" });
+    log({ skipped: "background", line, ...meta });
+    return { skipped: "background" };
   }
   const stillNeeded = NEEDS_YOU.has(ev.type) ? () => !answered(ev, getSession(ev.agent, ev.session)) : undefined;
   return speak(line, say.kind, { ...meta, lang: say.lang, via: say.via, queuedAt: ev.at, stillNeeded }, deps);

@@ -19,6 +19,7 @@ const { rewriteHooks } = await import("../src/adapters/codex.mjs");
 const { isOurCommand } = await import("../src/adapters/install-util.mjs");
 const { updateConfig } = await import("../src/config.mjs");
 const { startHubServer } = await import("../src/hub/server.mjs");
+const { getSession } = await import("../src/hub/sessions.mjs");
 const { writeShim } = await import("../src/shim.mjs");
 const { BIN, P } = await import("../src/paths.mjs");
 
@@ -256,6 +257,8 @@ test("/ask holds the request until the card answers, and returns the hook's exac
       const r = await pending;
       assert.equal(r.status, 200);
       assert.deepEqual(JSON.parse(r.body), expected);
+      const rec = getSession(agent, "s1");
+      assert.deepEqual([rec.status, rec.lastEvent], ["working", "answered"], "answering from the card means the agent is moving again");
     }
   } finally {
     updateConfig({ answerFromCard: false });

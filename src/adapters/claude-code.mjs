@@ -10,7 +10,8 @@ import { backup, commandPrefix, isOurCommand, quote } from "./install-util.mjs";
 
 // PostToolUse tells Earpiece the agent is moving again, so a permission alert you already
 // answered in the terminal isn't read out after the fact.
-const HOOK_EVENTS = ["UserPromptSubmit", "Stop", "Notification", "PostToolUse"];
+// SessionEnd takes the session off the list when you /exit or /clear.
+const HOOK_EVENTS = ["UserPromptSubmit", "Stop", "Notification", "PostToolUse", "SessionEnd"];
 // With "answer from the card" on, these two also get a blocking hook that waits for the card.
 const ASK_EVENTS = ["PermissionRequest", "Stop"];
 const settingsFile = () => path.join(os.homedir(), ".claude", "settings.json");
@@ -58,8 +59,9 @@ export default {
       case "UserPromptSubmit":
         return [{ ...base, type: "turn_start" }];
       case "Stop":
-        if (p.stop_hook_active) return []; // a Stop hook is already continuing the turn
-        return [{ ...base, type: "turn_end", text: p.last_assistant_message || "", transcriptPath: p.transcript_path }];
+        // stop_hook_active: a Stop hook continued the turn. The hub only keeps it when that hook was
+        // a reply you sent from the card, so the session doesn't stay "working" forever.
+        return [{ ...base, type: "turn_end", text: p.last_assistant_message || "", transcriptPath: p.transcript_path, ...(p.stop_hook_active ? { continued: true } : {}) }];
       case "Notification": {
         const msg = String(p.message || "").trim();
         if (p.notification_type === "idle_prompt" || /waiting for your input/i.test(msg)) return [{ ...base, type: "idle" }];
@@ -69,6 +71,8 @@ export default {
       }
       case "PostToolUse":
         return [{ ...base, type: "activity", tool: p.tool_name }];
+      case "SessionEnd":
+        return [{ ...base, type: "session_end" }];
       default:
         return []; // SubagentStop, PreToolUse, … are ignored
     }

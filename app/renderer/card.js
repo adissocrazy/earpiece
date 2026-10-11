@@ -14,7 +14,7 @@ const J = window.earpiece;
 const $ = (id) => document.getElementById(id);
 const island = $("card");
 const P = window.EarpiecePanel;
-const REASON = { mode_quiet: "Quiet", quiet_hours: "Quiet hours", agent_disabled: "Muted", voice_failed: "No voice" };
+const REASON = { mode_quiet: "Quiet", quiet_hours: "Quiet hours", agent_disabled: "Muted", voice_failed: "No voice", background: "Continuing in the background" };
 
 const FULL_W = 460; // the window is 480 wide; 10 px either side for the curved shoulders
 const WING = 46; // each wing next to the notch, collapsed

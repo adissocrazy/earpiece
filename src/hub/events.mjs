@@ -3,7 +3,7 @@
 //   {
 //     agent:      "claude-code" | "codex" | "aider" | any id      (required)
 //     session:    id of the conversation/thread within that agent (default: project)
-//     type:       "turn_start" | "turn_end" | "needs_input" | "idle" | "error" | "info" | "activity"
+//     type:       "turn_start" | "turn_end" | "needs_input" | "idle" | "error" | "info" | "activity" | "session_end"
 //     cwd:        working directory (used for the spoken project name)
 //     project:    explicit project name (overrides cwd)
 //     text:       the agent's own final message, to be summarised
@@ -16,7 +16,8 @@
 
 // "activity" means the agent is moving again (a tool just ran). It is never spoken; it withdraws
 // a pending "needs you" alert the user already answered in the terminal.
-export const EVENT_TYPES = ["turn_start", "turn_end", "needs_input", "idle", "error", "info", "activity"];
+// "session_end": the agent closed the session (Claude Code's SessionEnd); its row goes away.
+export const EVENT_TYPES = ["turn_start", "turn_end", "needs_input", "idle", "error", "info", "activity", "session_end"];
 
 export function normalizeEvent(e, agentId) {
   const ev = { ...e };

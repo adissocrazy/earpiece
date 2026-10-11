@@ -127,7 +127,8 @@ export function permissionAsk(agent, p, { alwaysAllow = true } = {}) {
 /** A Stop payload → an ask, only when the agent ended its turn with a question. */
 export function replyAsk(agent, p) {
   const text = String(p?.last_assistant_message || "").trim();
-  if (!text || !endsWithQuestion(text)) return null;
+  // The hub server sets _earpieceTurn from Jev on a Stop; without it, the question-mark rule.
+  if (!text || !(p._earpieceTurn ? p._earpieceTurn === "ask" : endsWithQuestion(text))) return null;
   // The last paragraph is the question itself; the rest is context the person has already read.
   const last = text.split(/\n{2,}/).filter(Boolean).pop() || text;
   return {

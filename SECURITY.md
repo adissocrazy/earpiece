@@ -6,7 +6,7 @@ Earpiece reads `SMALLEST_API_KEY` and `OPENAI_API_KEY` from your environment, fr
 
 ## What leaves your machine
 
-With keys configured, the tail of each agent's final message (up to 6,000 characters) goes to the summary provider (OpenAI by default), and the one-sentence line goes to the TTS provider. Both are skipped in `EARPIECE_DRY_RUN=1`. Without keys, nothing from your agents leaves your machine (the Mac app's usage stats, below, contain none of it). If your agents work on code you can't send to a third party, leave `OPENAI_API_KEY` unset or set `"ttsProviders": ["say"]`.
+With keys configured, the tail of each agent's final message (up to 6,000 characters) goes to the summary provider (OpenAI by default), and the one-sentence line goes to the TTS provider. Both are skipped in `EARPIECE_DRY_RUN=1`. Without keys, nothing from your agents leaves your machine (the Mac app's usage stats, below, contain none of it). With `TYPESAFE_API_KEY` (or `JEV_API_KEY`) set, the redacted tail of the same message (up to 4,000 characters) also goes to TypeSafe's Jev, which only answers whether the turn asks you something, finished, or is a progress note; Pro users' turns go to Earpiece's `classify` function instead, which asks Jev on Earpiece's key. `"summaryProvider": "none"` skips both. If your agents work on code you can't send to a third party, leave `OPENAI_API_KEY` unset or set `"ttsProviders": ["say"]`.
 
 ## Usage stats
 

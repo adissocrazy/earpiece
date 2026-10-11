@@ -202,6 +202,7 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
       sayVoice: c.sayVoice,
       minTurnSeconds: c.minTurnSeconds,
       chimes: c.chimes,
+      tones: c.tones,
       announceAgent: c.announceAgent,
       quietHours: c.quietHours,
       envFile: tidyPath(c.envFile),
@@ -222,6 +223,7 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
       engines: listEngines().map((e) => ({ id: e.id, label: e.label || e.id, keyName: e.keyName || null })),
       languages: [["en", "English"], ["hinglish", "Hinglish"], ...Object.entries(LANG_NAMES)],
       openaiVoices: OPENAI_VOICES,
+      tones: (await core("src/voice/speak.mjs")).TONES,
       home: tidyPath(lib.HOME),
       platform: process.platform,
     };
@@ -280,6 +282,17 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
         case "minTurnSeconds":
           out.minTurnSeconds = int(v, 0, 3600);
           break;
+        case "tones": {
+          const { TONES } = await core("src/voice/speak.mjs");
+          const t = { ...cur.tones };
+          for (const [kind, name] of Object.entries(v || {})) {
+            if (!["done", "needs_input", "error"].includes(kind)) throw bad("unknown ping kind");
+            if (name !== "none" && !TONES.includes(name)) throw bad("unknown tone");
+            t[kind] = name;
+          }
+          out.tones = t;
+          break;
+        }
         case "chimes":
         case "announceAgent":
           out[k] = Boolean(v);
@@ -371,7 +384,14 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
   }
 
   // Play a sample in one engine and voice without saving anything.
-  async function preview({ engine = "smallest", voiceId, model, openaiVoice, sayVoice } = {}) {
+  async function preview({ engine = "smallest", voiceId, model, openaiVoice, sayVoice, tone } = {}) {
+    if (tone) {
+      const { toneFile } = await core("src/voice/speak.mjs");
+      const { play } = await core("src/voice/play.mjs");
+      if (!toneFile(tone)) throw bad("unknown tone");
+      await play(toneFile(tone));
+      return { ok: true };
+    }
     const { getEngine } = await core("src/voice/engines/index.mjs");
     const { playBuffer } = await core("src/voice/play.mjs");
     const { phrase } = await core("src/i18n.mjs");

@@ -129,8 +129,10 @@ Deno.serve(async (req) => {
     body: JSON.stringify(jevRequest(text, agents, folders, defaultApp)),
   }).catch(() => null);
   if (!res?.ok) return json(502, { error: "router unavailable" });
-  const answer = fromJev(await res.json().catch(() => ({})), text, agents, folders, defaultApp);
+  const raw = await res.json().catch(() => ({}));
+  const answer = fromJev(raw, text, agents, folders, defaultApp);
 
   EdgeRuntime.waitUntil(Promise.resolve(admin.rpc("record_usage", { uid: who.uid, p_lines: 0, p_chars: 0, p_summaries: 1, p_fallbacks: 0 }))); // one decision, counted with summaries
-  return json(200, answer);
+  // `debug`: also Jev's raw probabilities for this request, so the app's routing eval can tune thresholds.
+  return json(200, p.debug === true ? { ...answer, raw: { model: raw.model, answers: raw.answers } } : answer);
 });

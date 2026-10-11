@@ -22,7 +22,8 @@ test("claude-code maps hook events", () => {
   const stop = claude.toEvents({ ...base, hook_event_name: "Stop", last_assistant_message: "Done.", transcript_path: "/t" })[0];
   assert.equal(stop.type, "turn_end");
   assert.equal(stop.text, "Done.");
-  assert.deepEqual(claude.toEvents({ ...base, hook_event_name: "Stop", stop_hook_active: true }), []);
+  assert.equal(claude.toEvents({ ...base, hook_event_name: "Stop", stop_hook_active: true })[0].continued, true);
+  assert.equal(claude.toEvents({ ...base, hook_event_name: "SessionEnd", reason: "prompt_input_exit" })[0].type, "session_end");
   const perm = claude.toEvents({ ...base, hook_event_name: "Notification", message: "Claude needs your permission to use Bash" })[0];
   assert.deepEqual([perm.type, perm.tool], ["needs_input", "Bash"]);
   assert.equal(claude.toEvents({ ...base, hook_event_name: "Notification", message: "Claude is waiting for your input" })[0].type, "idle");

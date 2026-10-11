@@ -627,6 +627,20 @@ function voice() {
       ),
       row("Say the agent's name", "“Codex, pricing page. Done…” instead of just the project.", sw(S.announceAgent, (v) => saveConfig({ announceAgent: v }), "Say the agent's name")),
       row("Chime before speaking", null, sw(S.chimes, (v) => saveConfig({ chimes: v }), "Chime")),
+      ...(S.chimes
+        ? [
+            ["done", "Tone: done", null],
+            ["needs_input", "Tone: needs you", "Also plays when a question opens in the notch."],
+            ["error", "Tone: error", null],
+          ].map(([kind, title, sub]) =>
+            row(
+              title,
+              sub,
+              select([["none", "None"], ...D.tones.map((t) => [t, t])], S.tones[kind], (v) => saveConfig({ tones: { [kind]: v } }), title),
+              S.tones[kind] !== "none" ? h("button", { class: "icon", "aria-label": `Play ${title}`, onclick: () => preview({ tone: S.tones[kind] }) }, "▶") : null,
+            ),
+          )
+        : []),
       row(
         "Minimum turn length",
         "Seconds. Quick replies shorter than this stay silent.",

@@ -21,6 +21,7 @@ export const DEFAULTS = {
   // During quiet hours only the kinds in `allow` are spoken. allow: [] = total silence; null disables.
   quietHours: { start: "23:00", end: "08:00", allow: ["needs_input"] },
   chimes: true,
+  tones: { done: "Glass", needs_input: "Ping", error: "Basso" }, // macOS sound names, or "none"
   // Approve/deny tool requests and reply to questions from the floating card. Off until you turn it
   // on: it installs blocking hooks (Claude Code, Codex) that wait for the card.
   answerFromCard: false,
@@ -38,6 +39,7 @@ export function config() {
     ...DEFAULTS,
     ...user,
     smallest: { ...DEFAULTS.smallest, ...(user.smallest || {}) },
+    tones: { ...DEFAULTS.tones, ...(user.tones || {}) },
     agents: { ...(user.agents || {}) },
   };
 }

@@ -7,6 +7,7 @@ import net from "node:net";
 import { getAdapter } from "../adapters/index.mjs";
 import { config } from "../config.mjs";
 import { P } from "../paths.mjs";
+import { classifyTurn } from "../summary/turn.mjs";
 import { ensureDirs, log } from "../util.mjs";
 import { handleCodex, handleHook } from "./entry.mjs";
 import { HELD_REPLY_TIMEOUT_MS, MAX_OPEN_ASKS, REPLY_TIMEOUT_MS } from "./asks.mjs";
@@ -39,6 +40,18 @@ function readBody(req) {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+// A Stop: Jev decides whether the card asks loudly (amber) or offers a quiet Reply. The adapters read it.
+async function classifyStop(payload, cfg = config()) {
+  if (payload?.hook_event_name === "Stop" && payload.last_assistant_message) payload._earpieceTurn = await classifyTurn(payload.last_assistant_message, cfg);
+}
+
+// You answered from the card or the notch: the agent is moving again. Recorded like a new prompt,
+// so the slower worker for the Stop that asked can't put "waiting" back (guarded() in hub.mjs).
+function markAnswered(agent, ask) {
+  if (!ask?.session) return;
+  ingestEvent({ type: "turn_start", agent, session: String(ask.session), cwd: ask.cwd, at: Date.now(), lastEvent: "answered" }).catch((e) => log({ error: `answered: ${e.message}`, agent }));
 }
 
 const parse = (raw) => {
@@ -115,7 +128,9 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
         if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
         const payload = parse(raw);
         const adapter = getAdapter(agent);
-        const ask = asks?.available() && config().replyFromNotch === true && asks.size() < MAX_OPEN_ASKS ? adapter.toReply?.(payload) : null;
+        const open = asks?.available() && config().replyFromNotch === true && asks.size() < MAX_OPEN_ASKS;
+        if (open) await classifyStop(payload);
+        const ask = open ? adapter.toReply?.(payload) : null;
         if (!ask) {
           res.writeHead(204);
           return res.end();
@@ -129,7 +144,9 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
         try {
           onEvent({ route: `reply/${agent}` });
         } catch {}
-        const text = adapter.replyText?.(await promise);
+        const answer = await promise;
+        if (answer) markAnswered(agent, ask);
+        const text = adapter.replyText?.(answer);
         if (!res.destroyed) {
           if (text) res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" }), res.end(text);
           else res.writeHead(204), res.end();
@@ -148,7 +165,9 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
         const fromRun = Boolean(parseOriginHeader(req.headers[ORIGIN_HEADER])?.run);
         const cfg = config();
         const answering = cfg.answerFromCard === true || fromRun;
-        let ask = asks?.available() && (answering || cfg.replyFromNotch === true) && asks.size() < MAX_OPEN_ASKS ? adapter.toAsk?.(payload, cfg) : null;
+        const open = asks?.available() && (answering || cfg.replyFromNotch === true) && asks.size() < MAX_OPEN_ASKS;
+        if (open) await classifyStop(payload, cfg);
+        let ask = open ? adapter.toAsk?.(payload, cfg) : null;
         // Permissions and questions are "Answer from the card"; a reply to any turn is "Reply from the notch".
         if (ask && !(ask.soft ? cfg.replyFromNotch === true : answering || (ask.kind === "reply" && cfg.replyFromNotch === true))) ask = null;
         // A soft reply here holds the agent (Codex can't be woken later), so only while you're away.
@@ -171,6 +190,7 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
           onEvent({ route: `ask/${agent}` });
         } catch {}
         const answer = await promise;
+        if (answer) markAnswered(agent, ask);
         const out = answer ? adapter.askOutput?.(payload, ask, answer) : null;
         if (!out) {
           if (!res.destroyed) res.writeHead(204), res.end();

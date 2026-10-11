@@ -10,12 +10,21 @@ import { echo, ensureDirs, isDry, log, now, plainFirstSentence, readJson, redact
 import { getEngine } from "./engines/index.mjs";
 import { play, playBuffer as realPlayBuffer } from "./play.mjs";
 
-const CHIMES = {
-  done: "/System/Library/Sounds/Glass.aiff",
-  needs_input: "/System/Library/Sounds/Ping.aiff",
-  error: "/System/Library/Sounds/Basso.aiff",
-  info: null,
-};
+// macOS system sounds. cfg.tones picks one per kind ("none" = no tone for that kind).
+export const TONES = ["Basso", "Blow", "Bottle", "Frog", "Funk", "Glass", "Hero", "Morse", "Ping", "Pop", "Purr", "Sosumi", "Submarine", "Tink"];
+export const toneFile = (name) => (TONES.includes(name) ? `/System/Library/Sounds/${name}.aiff` : null);
+// A notch question and the spoken "needs you" line for it arrive seconds apart: one tone, not two.
+const TONE_DEDUPE_MS = 5_000;
+
+/** Play the tone for this kind of line, unless tones are off or the same one just played. */
+export function chime(kind, cfg = config()) {
+  const file = cfg.chimes ? toneFile(cfg.tones?.[kind]) : null;
+  if (!file || !fs.existsSync(file)) return Promise.resolve(false);
+  const last = readJson(P.tone, {});
+  if (last.kind === kind && now() - (last.at || 0) < TONE_DEDUPE_MS) return Promise.resolve(false);
+  writeJson(P.tone, { kind, at: now() });
+  return play(file).catch(() => false);
+}
 const DUPLICATE_WINDOW_MS = 60_000;
 // A line that waited this long for the speaker is old news; drop it instead of reading it out late.
 export const STALE_MS = 2 * 60_000;
@@ -110,7 +119,7 @@ export async function speak(text, kind = "info", meta = {}, deps = {}) {
       await ready();
     } else {
       // The chime plays while the TTS request is in flight instead of delaying it.
-      if (cfg.chimes && CHIMES[kind] && fs.existsSync(CHIMES[kind])) chimeDone = play(CHIMES[kind]).catch(() => false);
+      chimeDone = chime(kind, cfg);
       for (const id of chain) {
         const e = getEngine(id);
         if (!e) {
