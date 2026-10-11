@@ -36,6 +36,7 @@ Voice and summaries get better with API keys, but both are optional. Put them in
 | --- | --- | --- |
 | `SMALLEST_API_KEY` | [Smallest.ai](https://smallest.ai) Lightning voices, including Indian languages | falls through to OpenAI or the system voice |
 | `OPENAI_API_KEY` | one-sentence summaries (gpt-4o-mini) and OpenAI TTS | first sentence of the agent's message, system voice |
+| `TYPESAFE_API_KEY` (or `JEV_API_KEY`) | [Jev](https://docs.typesafe.ai) decides if a finished turn asks you something, finished, or is a progress note (shown on the card, not spoken) | a turn ending in `?` needs you, anything else is done |
 
 Keys are read at call time and never written to logs. With an OpenAI key, the tail of each agent's final message (up to 6,000 characters) is sent to OpenAI to write the summary; leave the key unset if your code can't leave your machine. [SECURITY.md](SECURITY.md) has the details.
 
