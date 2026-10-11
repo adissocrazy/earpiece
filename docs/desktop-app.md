@@ -18,9 +18,15 @@ The app and the CLI share `~/.earpiece`: config, voices, mode, quiet hours and t
 
 ## Install
 
-Download `Earpiece-<version>-universal.dmg` from the [releases page](https://github.com/adissocrazy/earpiece/releases) and drag the app to Applications.
+The quickest way is one line in Terminal:
 
-The build is ad-hoc signed, not notarized, so macOS blocks it the first time you open it:
+```
+curl -fsSL https://earpiece.dev/install.sh | bash
+```
+
+It downloads the newest release from GitHub, checks it against the release's `SHA256SUMS`, its bundle id and its signature, puts it in `/Applications` (or `~/Applications` if you can't write there; it never uses sudo) and opens it. Installed this way the app carries no quarantine flag, so macOS opens it without asking. Run it again any time to reinstall or update. The script is [`landing-page/public/install.sh`](https://earpiece.dev/install.sh) on the website.
+
+Or download `Earpiece-<version>-universal.dmg` from the [releases page](https://github.com/adissocrazy/earpiece/releases) and drag the app to Applications. The build is ad-hoc signed, not notarized, so macOS blocks a downloaded copy the first time you open it:
 
 1. Open Earpiece. macOS says it can't verify the developer. Click **Done**.
 2. Open **System Settings → Privacy & Security**, scroll to Security, and click **Open Anyway** next to "Earpiece was blocked".
@@ -107,7 +113,7 @@ Releases are built by `.github/workflows/app-release.yml` whenever an `app-v*` t
 
 ## Updates
 
-Earpiece checks GitHub for a newer release a few seconds after it starts and every six hours after that, or when you click **Check for updates** under General. When there is one, a banner appears at the top of Overview and under General → About. Click **Update** and Earpiece downloads the new zip, checks its size and SHA-256 against the release, unpacks it, checks that it is Earpiece at the expected version with an intact signature, then quits, puts the new copy where the old one was and opens it. Your settings, keys and hooks stay where they are. If anything fails, the old copy is put back and opened.
+Earpiece checks GitHub for a newer release a few seconds after it starts and every six hours after that, or when you click **Check for updates** under General. When there is one, the notch says so once ("Earpiece 0.5.0 is ready. Click to update."), and a banner appears at the top of Overview and under General → About. Click the line in the notch, or **Update** in the banner, and Earpiece downloads the new zip, checks its size and SHA-256 against the release, unpacks it, checks that it is Earpiece at the expected version with an intact signature, then quits, puts the new copy where the old one was and opens it. Your settings, keys and hooks stay where they are. If anything fails, the old copy is put back and opened.
 
 The banner offers **Download** instead (the disk image, to drag to Applications yourself) when Earpiece can't replace itself: it is running from the disk image or from a temporary copy macOS made because it was never moved to Applications, its folder isn't writable, or the release has no checksum. Drafts and pre-releases are ignored.
 

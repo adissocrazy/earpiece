@@ -61,6 +61,11 @@ export function pickRelease(releases, current) {
   };
 }
 
+/** The version to announce in the notch: a newer release you haven't been told about yet, else null. */
+export function nudgeFor(state, lastNudged) {
+  return state?.newer && state.latest && state.latest !== lastNudged ? state.latest : null;
+}
+
 /** `shasum -a 256` output: "<hex>  <name>" per line. */
 export function parseSums(text) {
   const out = new Map();

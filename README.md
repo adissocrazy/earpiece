@@ -16,7 +16,7 @@ Running several agents at once turns you into a tab-watcher. You check a termina
 
 ## Install
 
-**On a Mac without the terminal:** download the Mac app from [Releases](https://github.com/adissocrazy/earpiece/releases), open **Agents** and click **Connect**. See [docs/desktop-app.md](docs/desktop-app.md) for the one-time "Open Anyway" step.
+**Mac app:** `curl -fsSL https://earpiece.dev/install.sh | bash` installs the latest version and opens it (run it again to update; new versions are also announced in the notch). Then open **Agents** and click **Connect**. Or download the disk image from [Releases](https://github.com/adissocrazy/earpiece/releases); see [docs/desktop-app.md](docs/desktop-app.md) for its one-time "Open Anyway" step.
 
 **From source:**
 

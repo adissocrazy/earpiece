@@ -206,7 +206,7 @@ function show(c) {
     $("project").textContent = c.project || "";
     $("line").textContent = c.line;
     island.title = isAsk ? "" : c.line;
-    $("full").querySelector(".head").title = isAsk ? "" : `Go to ${c.agentName || "the agent"}`;
+    $("full").querySelector(".head").title = isAsk ? "" : c.update ? "Update Earpiece" : `Go to ${c.agentName || "the agent"}`;
   }
   $("replyBtn").hidden = !(c.reply && !isAsk);
   const chip = $("chip");
@@ -380,6 +380,10 @@ island.addEventListener("click", (e) => {
     return setView(idle());
   }
   if (e.target.closest("#stop")) return J.card("stop");
+  if (e.target.closest(".head") && current.update) {
+    J.card("update"); // "Earpiece 0.5.0 is ready": install it, or open Overview if it can't swap itself
+    return setView(idle());
+  }
   if (e.target.closest(".head")) {
     // Take you to the agent's terminal tab or window; the app opens the dashboard if it can't.
     J.card("jump", { agent: current.agentId || null, session: current.session || null });

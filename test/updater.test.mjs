@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { bundleOf, createUpdater, newerThan, parseSums, pickRelease, swapBlocker, SWAP_SCRIPT } from "../app/main/updater.mjs";
+import { bundleOf, createUpdater, newerThan, nudgeFor, parseSums, pickRelease, swapBlocker, SWAP_SCRIPT } from "../app/main/updater.mjs";
 
 const DL = "https://github.com/adissocrazy/earpiece/releases/download/app-v0.4.0";
 const ZIP = Buffer.from("pretend this is a zip");
@@ -177,4 +177,12 @@ test("the swap script moves the new copy in, opens it, and keeps the old one if 
   const bad = spawnSync("/bin/sh", [script, "999999", path.join(dir, "new", "Earpiece.app"), path.join(dir, "Earpiece.app"), "/tmp/elsewhere", path.join(dir, "log")]);
   assert.equal(bad.status, 1);
   assert.equal(fs.readFileSync(path.join(dir, "Earpiece.app", "v"), "utf8"), "old");
+});
+
+test("the notch announces each newer version once", () => {
+  assert.equal(nudgeFor({ newer: true, latest: "0.5.0" }, undefined), "0.5.0");
+  assert.equal(nudgeFor({ newer: true, latest: "0.5.0" }, "0.5.0"), null, "already told you about this one");
+  assert.equal(nudgeFor({ newer: true, latest: "0.5.1" }, "0.5.0"), "0.5.1");
+  assert.equal(nudgeFor({ newer: false, latest: "0.4.2" }, undefined), null);
+  assert.equal(nudgeFor(null, undefined), null);
 });

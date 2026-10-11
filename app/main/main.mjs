@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createDashboard, tidyPath } from "./dashboard.mjs";
-import { createUpdater } from "./updater.mjs";
+import { createUpdater, nudgeFor } from "./updater.mjs";
 import { createAuth } from "./auth.mjs";
 import { createTelemetry, features, KEY, SUPABASE } from "./telemetry.mjs";
 import { createCardPointer } from "./card-pointer.mjs";
@@ -272,7 +272,7 @@ async function start() {
     log: lib.log,
     openExternal: (url) => shell.openExternal(url),
     quit: () => app.quit(),
-    onChange: scheduleRefresh,
+    onChange: (s) => (scheduleRefresh(), nudgeUpdate(s)),
   });
   dash = createDashboard({ app, dialog, shell, lib, core, state, hookStatus, connect: connectAgents, disconnect: disconnectAgents, refresh, prefs, updater, auth, account, syncAccount, openBilling });
   Menu.setApplicationMenu(appMenu());
@@ -881,6 +881,23 @@ function checkCard() {
   if (c && Date.now() - (c.at || 0) < 30_000) presentCard(c);
 }
 
+// ---------- updates ----------
+// Once per version the notch says a new one is ready; a click on it installs it (updater.mjs).
+// Not over a question that is waiting: the updater checks again in a few hours.
+let failNoticed = null;
+function nudgeUpdate(s) {
+  if (prefs.get().showCard === false || asks?.list().some((a) => !a.soft)) return;
+  const card = (id, line) => deliverCard({ id, line, kind: "done", state: "spoken", agentId: null, agentName: "Earpiece", update: true });
+  if (s.status === "failed" && s.error && s.error !== failNoticed) {
+    failNoticed = s.error;
+    return card(`update-failed-${Date.now()}`, `Couldn't update: ${s.error.replace(/^Update failed: /, "")}. Open Earpiece to try again.`);
+  }
+  const v = nudgeFor(s, prefs.get().updateNudged);
+  if (!v) return;
+  prefs.set("updateNudged", v);
+  card(`update-${v}`, `Earpiece ${v} is ready. Click to update.`);
+}
+
 // ---------- actions ----------
 
 // An answer from the panel's "Needs you" tab (already held 2 s there, so Esc could take it back).
@@ -1246,6 +1263,8 @@ ipcMain.handle("card", (e, action, value) => {
   }
   else if (action === "stop") (lib.stopSpeaking(), refresh());
   else if (action === "open") showMain("overview");
+  // The update line in the notch: install in one click, or show why it can't (Overview).
+  else if (action === "update") (updater?.state().oneClick ? updater.install() : showMain("overview"));
   else if (action === "jump") {
     const v = value && typeof value === "object" ? value : {};
     jumpToSession(v.agent, v.session);
