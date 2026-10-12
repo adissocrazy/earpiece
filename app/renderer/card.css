@@ -35,7 +35,9 @@ body {
 .shoulder.left { left: -10px; background: radial-gradient(circle at 0 100%, transparent 9.5px, #000 10px); }
 .shoulder.right { right: -10px; background: radial-gradient(circle at 100% 100%, transparent 9.5px, #000 10px); }
 
-.clip { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; }
+/* clip, not hidden: a hidden box can still be scrolled (scrollIntoView, focus) and then every view
+   draws above the island, leaving it empty. */
+.clip { position: absolute; inset: 0; overflow: clip; border-radius: inherit; }
 
 .island.needs_input { --accent: #ffb020; }
 .island.error { --accent: #ff5a4e; }
