@@ -1,7 +1,7 @@
 {
   "name": "earpiece-app",
   "productName": "Earpiece",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Mac app for earpiece: the command center for all your agents.",
   "type": "module",

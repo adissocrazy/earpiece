@@ -1058,6 +1058,7 @@ function createPopover() {
   popover.on("blur", () => {
     if (!popover.webContents.isDevToolsOpened()) popover.hide();
   });
+  popover.on("closed", () => (popover = null)); // on quit; timers still running mustn't reach it
   lockDown(popover);
 }
 
@@ -1119,6 +1120,7 @@ function createMain() {
     win.hide();
   });
   win.once("ready-to-show", () => win.show());
+  win.on("closed", () => (win = null)); // on quit; timers still running mustn't reach it
 }
 
 function showMain(section) {
@@ -1364,6 +1366,8 @@ app.on("before-quit", async (e) => {
   app.quit();
 });
 app.on("will-quit", () => globalShortcut.unregister(PANEL_KEY));
-app.on("window-all-closed", () => {}); // keeps running in the menu bar
+// Keeps running in the menu bar. Mid-quit, Electron can lose track of the quit after before-quit
+// was put off (Pro's check, the hub closing) and land here with every window gone: finish it.
+app.on("window-all-closed", () => quitting && app.quit());
 // Ctrl+C on the dev app, or a plain kill: quit properly, so the line playing stops too.
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => app.quit());
