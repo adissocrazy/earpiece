@@ -1,6 +1,6 @@
 # Adapters
 
-An adapter connects one coding agent to the hub. It translates whatever the agent sends from its hooks into hub events, and it can optionally install itself into the agent's config.
+An adapter connects one agent to the hub. It translates whatever the agent sends from its hooks into hub events, and it can optionally install itself into the agent's config.
 
 ## The event shape
 

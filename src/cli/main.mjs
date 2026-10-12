@@ -29,7 +29,7 @@ import { speak } from "../voice/speak.mjs";
 
 const pkg = readJson(path.join(ROOT, "package.json"), {});
 
-export const HELP = `earpiece ${pkg.version || ""} — spoken pings for terminal coding agents
+export const HELP = `earpiece ${pkg.version || ""} — the command center for all your agents
 
 Setup
   earpiece install [--only claude-code,codex,claude-desktop] [--chain] [--env path/.env] [--hub | --node]

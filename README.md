@@ -1,12 +1,12 @@
 # earpiece
 
-A voice hub for terminal coding agents. Start a task in Claude Code, another in Codex, walk away, and Earpiece tells you out loud when one of them finishes or needs you:
+The command center for all your agents. See every agent you run in one place, answer them from the notch, and hear when one finishes or needs you. Start a task in Claude Code, another in Codex, walk away, and Earpiece tells you:
 
 > "checkout service. Refactored the cart drawer, all tests pass."
 >
 > "billing needs your permission to use Bash."
 
-It sits between your agents and your speakers. Each agent's hooks send events to one hub. The hub tracks every session, writes a one-sentence summary of what the agent did, and speaks it through the first voice engine that works. Short turns stay silent, duplicate lines are dropped, alerts you already answered are skipped, secrets are never read out, and quiet hours let only the "I need you" pings through (or nothing at all).
+It sits between your agents and you. Each agent's hooks send events to one hub. The hub tracks every session, lists them in the notch and the app so you can answer or jump to any of them, writes a one-sentence summary of what the agent did, and speaks it through the first voice engine that works. Short turns stay silent, duplicate lines are dropped, alerts you already answered are skipped, secrets are never read out, and quiet hours let only the "I need you" pings through (or nothing at all).
 
 Zero dependencies. Node 20 or newer. MIT licensed.
 

@@ -3,7 +3,7 @@
   "productName": "Earpiece",
   "version": "0.4.3",
   "private": true,
-  "description": "Mac app for earpiece: spoken pings for your coding agents, no terminal needed.",
+  "description": "Mac app for earpiece: the command center for all your agents.",
   "type": "module",
   "main": "main/main.mjs",
   "author": "Aditya Vernekar",
