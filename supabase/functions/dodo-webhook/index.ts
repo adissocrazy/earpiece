@@ -2,6 +2,9 @@
 // public.subscriptions in step with the subscription's life: active/renewed → Pro until the next
 // billing date (plus a short grace for late renewals), cancelled/past due → Pro until the paid
 // period ends, on hold/expired/failed → Free. Older events delivered late are ignored.
+// Lifetime is a one-time payment: payment.succeeded for it → Pro with no end date (and any running
+// subscription is set to cancel at its next billing date, so it isn't charged again); a refund or
+// lost dispute of that payment → Free. Subscription events never change a lifetime account.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { Webhook } from "npm:standardwebhooks@1.0.0";
@@ -15,6 +18,86 @@ const PRO_PRODUCTS = [
   "pdt_0NowseZLebYL9xfZ7e6RC", "pdt_0NowsebJJIuoHy8MRWTIt", // test
   env("DODO_PRODUCT_MONTH"), env("DODO_PRODUCT_YEAR"),
 ].filter(Boolean);
+const LIFETIME_PRODUCTS = ["pdt_0NpZ2e9UXUDouyVlIDrP4", env("DODO_PRODUCT_LIFETIME")].filter(Boolean);
+const DODO = env("DODO_ENV").toLowerCase() === "live" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
+const API_KEY = env("DODO_API_KEY").replace(/^Bearer\s+/i, "");
+
+async function dodo(method: string, path: string, body?: unknown) {
+  const res = await fetch(`${DODO}${path}`, {
+    method,
+    signal: AbortSignal.timeout(15000),
+    headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`dodo ${method} ${path} HTTP ${res.status}: ${JSON.stringify(j).slice(0, 200)}`);
+  return j;
+}
+
+// Where an event's plan goes: the account (user id from the checkout metadata, else the account with
+// the customer's email), or, for someone who bought on the website and hasn't signed in yet, a row
+// in pending_subscriptions under that email, which their first sign-in claims.
+type Who = { table: "subscriptions"; key: "user_id"; id: string } | { table: "pending_subscriptions"; key: "email"; id: string };
+async function whoFor(d: Record<string, any>): Promise<Who | null> {
+  const email = String(d.customer?.email || "").trim().toLowerCase();
+  let uid: string | null = d.metadata?.user_id || null;
+  if (!uid && email) uid = (await admin.rpc("user_id_by_email", { p_email: email })).data || null;
+  if (uid) return { table: "subscriptions", key: "user_id", id: uid };
+  return email ? { table: "pending_subscriptions", key: "email", id: email } : null;
+}
+
+const read = async (who: Who, cols: string) => (await admin.from(who.table).select(cols).eq(who.key, who.id).maybeSingle()).data as Record<string, any> | null;
+
+async function save(who: Who, row: Record<string, unknown>) {
+  const { error } = await admin.from(who.table).upsert({ [who.key]: who.id, ...row, updated_at: new Date().toISOString() });
+  if (error) console.error("dodo-webhook upsert", who.table, error.message);
+  return error ? new Response("db error", { status: 500 }) : ok(); // Dodo retries a 500
+}
+
+async function onLifetimePayment(event: { timestamp: string; data: Record<string, any> }) {
+  const pay = event.data;
+  // The webhook payload usually carries the cart; if not, ask Dodo for the payment.
+  const cart: { product_id: string }[] = pay.product_cart ?? (await dodo("GET", `/payments/${pay.payment_id}`)).product_cart ?? [];
+  if (!cart.some((i) => LIFETIME_PRODUCTS.includes(i.product_id))) return ok(); // a subscription payment, or another brand
+  const who = await whoFor(pay);
+  if (!who) {
+    console.error("dodo-webhook: no user or email for lifetime payment", pay.payment_id);
+    return ok();
+  }
+  const cur = await read(who, "status, provider_subscription_id, lifetime");
+  const res = await save(who, {
+    plan: "pro",
+    status: "active",
+    current_period_end: null,
+    lifetime: true,
+    lifetime_payment_id: pay.payment_id,
+    provider: "dodo",
+    provider_customer_id: pay.customer?.customer_id || null,
+    event_at: event.timestamp,
+  });
+  // A monthly or yearly plan still running would bill again: stop it at its next billing date.
+  if (res.ok && !cur?.lifetime && cur?.provider_subscription_id && ["active", "trialing", "past_due"].includes(cur.status)) {
+    try {
+      await dodo("PATCH", `/subscriptions/${cur.provider_subscription_id}`, { cancel_at_next_billing_date: true });
+    } catch (e) {
+      console.error("dodo-webhook: couldn't cancel the old subscription", cur.provider_subscription_id, String(e));
+    }
+  }
+  return res;
+}
+
+// A refund or lost dispute of the lifetime payment ends it. Partial refunds (a goodwill credit) don't.
+async function onLifetimeReversal(event: { type: string; timestamp: string; data: Record<string, any> }) {
+  const d = event.data;
+  if (event.type === "refund.succeeded" && d.is_partial === true) return ok();
+  if (!d.payment_id) return ok();
+  for (const [table, key] of [["subscriptions", "user_id"], ["pending_subscriptions", "email"]] as const) {
+    const { data } = await admin.from(table).select(key).eq("lifetime_payment_id", d.payment_id).eq("lifetime", true).maybeSingle();
+    const id = (data as Record<string, string> | null)?.[key];
+    if (id) return save({ table, key, id } as Who, { plan: "free", status: "canceled", current_period_end: event.timestamp, lifetime: false, event_at: event.timestamp });
+  }
+  return ok(); // not a lifetime payment
+}
 
 const ok = () => new Response(JSON.stringify({ received: true }), { headers: { "Content-Type": "application/json" } });
 const plus = (iso: string | null | undefined, ms: number) => (iso ? new Date(Date.parse(iso) + ms).toISOString() : null);
@@ -32,24 +115,22 @@ Deno.serve(async (req) => {
   } catch {
     return new Response("bad signature", { status: 401 });
   }
+  if (event.type === "payment.succeeded") return onLifetimePayment(event);
+  if (event.type === "refund.succeeded" || event.type === "dispute.lost") return onLifetimeReversal(event);
   if (!event.type?.startsWith("subscription.")) return ok();
   const s = event.data;
   // The Dodo business also sells other brands' products and their events arrive here too:
   // only the Earpiece Pro products may change an Earpiece account.
   if (!PRO_PRODUCTS.includes(s.product_id)) return ok();
 
-  // Who: the user id put in the checkout metadata, else the customer's email.
-  let uid: string | null = s.metadata?.user_id || null;
-  if (!uid && s.customer?.email) {
-    const { data } = await admin.rpc("user_id_by_email", { p_email: s.customer.email });
-    uid = data || null;
-  }
-  if (!uid) {
-    console.error("dodo-webhook: no user for", s.subscription_id);
+  const who = await whoFor(s);
+  if (!who) {
+    console.error("dodo-webhook: no user or email for", s.subscription_id);
     return ok(); // nothing to retry: Dodo would keep redelivering an event we can't place
   }
 
-  const { data: cur } = await admin.from("subscriptions").select("event_at").eq("user_id", uid).maybeSingle();
+  const cur = await read(who, "event_at, lifetime");
+  if (cur?.lifetime) return ok(); // Pro for life: an old plan's events don't change it
   if (cur?.event_at && Date.parse(cur.event_at) > Date.parse(event.timestamp)) return ok();
 
   const t = event.type;
@@ -66,18 +147,11 @@ Deno.serve(async (req) => {
     return ok(); // e.g. update_payment_method, or an update that isn't an activation
   }
 
-  const { error } = await admin.from("subscriptions").upsert({
-    user_id: uid,
+  return save(who, {
     ...row,
     provider: "dodo",
     provider_customer_id: s.customer?.customer_id || null,
     provider_subscription_id: s.subscription_id || null,
     event_at: event.timestamp,
-    updated_at: new Date().toISOString(),
   });
-  if (error) {
-    console.error("dodo-webhook upsert", error.message);
-    return new Response("db error", { status: 500 }); // Dodo retries
-  }
-  return ok();
 });

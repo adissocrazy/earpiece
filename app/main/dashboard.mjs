@@ -512,7 +512,7 @@ export function createDashboard({ app, dialog, shell, lib, core, state, hookStat
       case "signIn":
         return auth.signIn();
       case "upgrade":
-        return openBilling({ action: "checkout", interval: a.interval === "year" ? "year" : "month" });
+        return openBilling({ action: "checkout", interval: ["year", "lifetime"].includes(a.interval) ? a.interval : "month" });
       case "manageBilling":
         return openBilling({ action: "portal" });
       case "signOut":

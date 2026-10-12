@@ -1,5 +1,6 @@
-// Earpiece Pro billing for the signed-in user: { action: "checkout", interval: "month" | "year" }
-// returns a Dodo Payments checkout URL; { action: "portal" } returns the customer portal URL
+// Earpiece Pro billing for the signed-in user: { action: "checkout", interval: "month" | "year" |
+// "lifetime" } returns a Dodo Payments checkout URL (monthly starts with a 3-day trial, lifetime is a
+// one-time payment); { action: "portal" } returns the customer portal URL
 // (change card, cancel). The Supabase user id rides along in the checkout metadata so the
 // webhook (dodo-webhook) can tie the subscription back to the account.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -10,13 +11,16 @@ const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE
 const env = (name: string) => (Deno.env.get(name) || "").trim().replace(/^["']|["']$/g, "");
 const DODO = env("DODO_ENV").toLowerCase() === "live" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
 const API_KEY = env("DODO_API_KEY").replace(/^Bearer\s+/i, "");
-// Earpiece Pro products (Earpiece brand in Dodo), per mode. Not secret; DODO_PRODUCT_MONTH / _YEAR override.
+// Earpiece Pro products (Earpiece brand in Dodo), per mode. Not secret; DODO_PRODUCT_MONTH / _YEAR /
+// _LIFETIME override. Lifetime has no test product yet: set DODO_PRODUCT_LIFETIME to test it.
 const LIVE = DODO.includes("live.");
 const PRODUCTS: Record<string, string> = {
   month: env("DODO_PRODUCT_MONTH") || (LIVE ? "pdt_0Nox7nghhsoBXPYpVE3cy" : "pdt_0NowseZLebYL9xfZ7e6RC"),
   year: env("DODO_PRODUCT_YEAR") || (LIVE ? "pdt_0Nox7nhuXf5QMA425MfjH" : "pdt_0NowsebJJIuoHy8MRWTIt"),
+  lifetime: env("DODO_PRODUCT_LIFETIME") || (LIVE ? "pdt_0NpZ2e9UXUDouyVlIDrP4" : ""),
 };
 const RETURN_URL = "https://earpiece.dev/?pro=thanks";
+const TRIAL_DAYS = 3;
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -47,8 +51,14 @@ Deno.serve(async (req) => {
       const portal = await dodo(`/customers/${sub.provider_customer_id}/customer-portal/session`, {});
       return json(200, { url: portal.link });
     }
-    const product_id = PRODUCTS[String(p.interval || "month")];
-    if (!product_id) return json(400, { error: "interval must be month or year" });
+    const interval = String(p.interval || "month");
+    const product_id = Object.hasOwn(PRODUCTS, interval) ? PRODUCTS[interval] : "";
+    if (!product_id) return json(400, { error: "interval must be month, year or lifetime" });
+    // Already Pro for life: nothing left to buy.
+    const { data: had } = await admin.from("subscriptions").select("lifetime, provider_subscription_id").eq("user_id", user.id).maybeSingle();
+    if (had?.lifetime) return json(409, { error: "You already have Earpiece Pro for life." });
+    // Monthly starts with 3 free days (card taken up front), once per account.
+    const trial = interval === "month" && !had?.provider_subscription_id ? TRIAL_DAYS : 0;
     const m = user.user_metadata || {};
     const session = await dodo("/checkouts", {
       product_cart: [{ product_id, quantity: 1 }],
@@ -56,6 +66,7 @@ Deno.serve(async (req) => {
       metadata: { user_id: user.id, app: "earpiece" },
       return_url: RETURN_URL,
       feature_flags: { allow_discount_code: true },
+      ...(trial ? { subscription_data: { trial_period_days: trial } } : {}),
     });
     return json(200, { url: session.checkout_url });
   } catch (e) {

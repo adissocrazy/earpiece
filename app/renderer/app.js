@@ -227,8 +227,8 @@ function proBanner() {
     { class: "group pro-banner" },
     row(
       "Upgrade to Earpiece Pro",
-      "Natural voices and one-line summaries on Earpiece's keys, so you don't need any API keys. $10 a month, or $96 a year.",
-      signedIn ? btn("Upgrade", () => act("upgrade", { interval: "month" }), "primary") : btn("Sign in to upgrade", () => act("signIn"), "primary"),
+      "Start and steer agents from the notch, talk to them, and get natural voices and summaries with no API keys. 3 days free, then $10 a month, $96 a year, or $179 once.",
+      signedIn ? btn("Start 3-day free trial", () => act("upgrade", { interval: "month" }), "primary") : btn("Sign in to start your free trial", () => act("signIn"), "primary"),
     ),
   );
 }
@@ -928,15 +928,16 @@ function account() {
             row(u.name || u.email, u.name ? u.email : "Signed in with Google", btn("Sign out", () => act("signOut").then(() => setPref("hideSignInNudge", true)))),
             A.plan?.plan === "pro"
               ? row(
-                  "Earpiece Pro",
-                  `Hosted voice and summaries on Earpiece's keys, no API keys needed. ${Number(A.plan.lines_used || 0).toLocaleString()} of ${Number(A.plan.lines_cap || 0).toLocaleString()} hosted lines used this month; after that your own keys or the system voice take over.`,
-                  btn("Manage billing", () => act("manageBilling")),
+                  A.plan.lifetime ? "Earpiece Pro · Lifetime" : "Earpiece Pro",
+                  `${A.plan.lifetime ? "Yours for good, nothing to renew. " : ""}Hosted voice and summaries on Earpiece's keys, no API keys needed. ${Number(A.plan.lines_used || 0).toLocaleString()} of ${Number(A.plan.lines_cap || 0).toLocaleString()} hosted lines used this month; after that your own keys or the system voice take over.`,
+                  btn(A.plan.lifetime ? "Receipts" : "Manage billing", () => act("manageBilling")),
                 )
               : row(
                   "Free plan",
-                  "Everything works on Free with your own keys or the system voice. Pro adds natural voices and one-line summaries on Earpiece's keys, so you don't need any API keys. $10 a month, or $96 a year.",
+                  "Everything works on Free with your own keys or the system voice. Pro lets you start and steer agents from the notch and talk to them, with natural voices and summaries on Earpiece's keys. 3 days free, then $10 a month, $96 a year, or $179 once for life.",
+                  btn("Lifetime $179", () => act("upgrade", { interval: "lifetime" })),
                   btn("Yearly", () => act("upgrade", { interval: "year" })),
-                  btn("Upgrade to Pro", () => act("upgrade", { interval: "month" }), "primary"),
+                  btn("Start 3-day free trial", () => act("upgrade", { interval: "month" }), "primary"),
                 ),
           ]
         : row(

@@ -1,6 +1,6 @@
 # Features: Free and Pro
 
-What Earpiece does today, split by plan. Free is the open-source app and CLI: everything in this repo, with your own API keys or the system voice. Pro costs $10 a month or $96 a year. It adds hosted voice and AI on Earpiece's keys, plus features that only ship in the release build of the Mac app.
+What Earpiece does today, split by plan. Free is the open-source app and CLI: everything in this repo, with your own API keys or the system voice. Pro costs $10 a month (after a 3-day free trial), $96 a year, or $179 once for Lifetime. It adds hosted voice and AI on Earpiece's keys, plus features that only ship in the release build of the Mac app.
 
 ## At a glance
 
@@ -63,9 +63,9 @@ What Earpiece does today, split by plan. Free is the open-source app and CLI: ev
 ### CLI
 `install`, `uninstall`, `env`, `test`, `agents`, `where`, `jump`, `emit`, `run`, `say`, `voices`, `voice`, `lang`, `quiet`, `off`, `on`, `stop`, `quiet-hours`, `answers`, `sync`, `pack`, `serve`, `mcp`, `status`, `doctor`. Configuration is covered in [configuration.md](configuration.md).
 
-## Pro ($10 a month or $96 a year)
+## Pro ($10 a month, $96 a year, or $179 Lifetime)
 
-Buy from General → Account → Upgrade (Dodo Payments checkout). Pro switches on by itself once the payment goes through. Manage billing opens the portal. A cancelled plan keeps Pro until the end of the paid period.
+Buy on [earpiece.dev/pricing](https://earpiece.dev/pricing) or from General → Account in the app (Dodo Payments checkout). Bought on the website, Pro is attached to the account that signs in with the email you paid with, even if you sign in later. Monthly starts with a 3-day free trial (card required, one per account). Lifetime is one payment of $179 with the same monthly hosted-line cap; a monthly or yearly plan you already have stops at its next billing date. Manage billing opens the portal. A cancelled plan keeps Pro until the end of the paid period.
 
 ### Hosted voice and AI (works in the CLI too once the app is signed in)
 - **Natural AI voices with no API key**. The hosted `earpiece` engine is tried first.
@@ -91,5 +91,5 @@ Buy from General → Account → Upgrade (Dodo Payments checkout). Pro switches 
 
 ## Where each part lives
 - Free: everything in this repo (`src/`, `bin/`, `app/`).
-- Pro hosted services: `supabase/functions/` (`tts`, `summarize`, `classify`, `stt`, `route`, `billing`, `dodo-webhook`). The plan and usage tables are in `supabase/migrations/`.
+- Pro hosted services: `supabase/functions/` (`tts`, `summarize`, `classify`, `stt`, `route`, `billing`, `web-checkout`, `dodo-webhook`). The plan and usage tables are in `supabase/migrations/`.
 - Earpiece terminals and Talk ship only in the release build of the Mac app. A build from source is the Free app, and a signed-in Pro account there still gets the hosted voice and AI features.
