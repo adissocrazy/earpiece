@@ -5,12 +5,16 @@ import { tempHome } from "./helpers.mjs";
 tempHome();
 const { getAdapter, listAdapters } = await import("../src/adapters/index.mjs");
 const { notifySpan, rewriteToml } = await import("../src/adapters/codex.mjs");
+const { hermesEvent } = await import("../src/adapters/hermes.mjs");
+const { lastAssistantText, openclawEvents } = await import("../src/adapters/openclaw.mjs");
 
 const claude = getAdapter("claude-code");
 const codex = getAdapter("codex");
+const openclaw = getAdapter("openclaw");
+const hermes = getAdapter("hermes");
 
 test("registry has built-ins and a generic fallback", () => {
-  assert.deepEqual(listAdapters().map((a) => a.id).sort(), ["claude-code", "claude-desktop", "codex"]);
+  assert.deepEqual(listAdapters().map((a) => a.id).sort(), ["claude-code", "claude-desktop", "codex", "hermes", "openclaw"]);
   const g = getAdapter("gemini-cli");
   assert.equal(g.name, "Gemini Cli");
   assert.deepEqual(g.toEvents({ type: "info", line: "hi" }), [{ type: "info", line: "hi", agent: "gemini-cli" }]);
@@ -37,6 +41,24 @@ test("codex maps agent-turn-complete", () => {
   assert.deepEqual(codex.toEvents({ type: "something-else" }), []);
 });
 
+test("Hermes lifecycle events map to hub events", () => {
+  assert.equal(hermes.toEvents({ hook_event_name: "agent:start", session_id: "s", cwd: "/x" })[0].type, "turn_start");
+  const [done] = hermesEvent("agent:end", { session_id: "s", cwd: "/x", response: "Finished.", duration_ms: 1200 });
+  assert.deepEqual([done.agent, done.type, done.session, done.text, done.durationMs], ["hermes", "turn_end", "s", "Finished.", 1200]);
+  assert.equal(hermesEvent("agent:step", { session_id: "s", tool_names: ["terminal", "patch"] })[0].type, "activity");
+});
+
+test("OpenClaw agent_end extracts the last assistant text", () => {
+  const messages = [
+    { role: "user", content: "Fix it" },
+    { role: "assistant", content: [{ type: "text", text: "Done." }] },
+  ];
+  assert.equal(lastAssistantText(messages), "Done.");
+  const [done] = openclawEvents({ type: "agent_end", messages, runId: "r1", success: true }, { sessionKey: "s1", cwd: "/x" });
+  assert.deepEqual([done.agent, done.type, done.session, done.text], ["openclaw", "turn_end", "s1", "Done."]);
+  const [failed] = openclaw.toEvents({ type: "agent_end", error: "Failed" });
+  assert.deepEqual([failed.type, failed.text], ["error", "Failed"]);
+});
 test("notifySpan parses single and multi-line arrays", () => {
   assert.deepEqual(notifySpan(['notify = ["a", "b c"]'], 0), { end: 0, value: ["a", "b c"] });
   const lines = ["notify = [", '  "x", # comment', "  'y',", "]", "model = 1"];

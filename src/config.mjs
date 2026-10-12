@@ -31,6 +31,9 @@ export const DEFAULTS = {
   //   { "codex": { "voice": "sophie", "minTurnSeconds": 0 }, "claude-code": { "enabled": true } }
   // Supported keys: enabled, voice (Smallest voice id), model, openaiVoice, sayVoice, minTurnSeconds, label.
   agents: {},
+  // Optional remote ingress and outbound delivery routes. Remote agents POST to the hub;
+  // routes can use Hermes' configured channels (`hermes:whatsapp:+...`) or a webhook.
+  remote: { enabled: false, host: "127.0.0.1", port: 8765, tokenEnv: "EARPIECE_REMOTE_TOKEN", routes: [] },
 };
 
 export function config() {
@@ -41,6 +44,7 @@ export function config() {
     smallest: { ...DEFAULTS.smallest, ...(user.smallest || {}) },
     tones: { ...DEFAULTS.tones, ...(user.tones || {}) },
     agents: { ...(user.agents || {}) },
+    remote: { ...DEFAULTS.remote, ...(user.remote || {}), routes: Array.isArray(user.remote?.routes) ? user.remote.routes : DEFAULTS.remote.routes },
   };
 }
 
