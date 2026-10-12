@@ -109,7 +109,7 @@ npm run dist         # universal DMG and zip in app/dist
 npm run dist:arm64   # Apple silicon only, faster
 ```
 
-Releases are built by `.github/workflows/app-release.yml` whenever an `app-v*` tag is pushed.
+Releases are built on the maintainer's Mac with `scripts/release-mac.sh` (it bundles Earpiece Pro, which is not in this repo), then published with `gh release create`.
 
 ## Updates
 
