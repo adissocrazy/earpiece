@@ -23,6 +23,8 @@ Send `activity` (with `tool`) whenever your agent finishes a tool call if it can
 
 If your agent sends `turn_start`, Earpiece measures turn length itself and skips short turns. If it can't, send `durationMs` with `turn_end`, or every turn will be announced.
 
+Ids starting with `remote.` are reserved for cloud agents paired through the relay. `earpiece emit --agent remote.anything` is rejected. See [remote-agents.md](remote-agents.md).
+
 ## No code: `earpiece emit`
 
 The quickest integration is a hook that shells out:

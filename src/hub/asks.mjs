@@ -23,16 +23,20 @@ export const HELD_REPLY_TIMEOUT_MS = 60_000;
 const BEHAVIORS = new Set(["allow", "always", "deny"]);
 const MAX_REPLY = 4000;
 export const MAX_OPEN_ASKS = 20; // a flood of asks must not bury the real ones
+export const MAX_REMOTE_ASKS = 10; // remote questions have their own cap inside that
 
 /**
  * What the card's ‹ › arrows step through: every session you can send input to right now.
- * Questions and permission requests first (oldest first, they hold an agent), then open Reply from
- * the notch replies (newest first).
+ * Local questions first (they can approve something on this Mac), then remote questions,
+ * then open Reply from the notch replies (newest first). A noisy cloud agent can't bury a
+ * local permission prompt.
  */
 export function navItems(list) {
-  const hard = list.filter((a) => !a.soft).sort((a, b) => a.at - b.at);
+  const hard = list.filter((a) => !a.soft);
+  const local = hard.filter((a) => !a.remote).sort((a, b) => a.at - b.at);
+  const remote = hard.filter((a) => a.remote).sort((a, b) => a.at - b.at);
   const soft = list.filter((a) => a.soft).sort((a, b) => b.at - a.at);
-  return [...hard, ...soft];
+  return [...local, ...remote, ...soft];
 }
 
 /** The item to show: the focused one if it's still open, else the first. dir ±1 steps and wraps. */
@@ -117,6 +121,13 @@ export function createAsks({ onChange = () => {}, away = async () => false } = {
      * `ask`: { kind, agent, session, project?, cwd?, tool?, detail?, line, canAlways? }
      */
     open(ask, { timeoutMs = ASK_TIMEOUT_MS } = {}) {
+      // Remote asks count against both caps. Refuse instead of evicting a local question.
+      if (ask?.remote) {
+        const remoteOpen = [...open.values()].filter((e) => e.ask.remote).length;
+        if (remoteOpen >= MAX_REMOTE_ASKS || open.size >= MAX_OPEN_ASKS) {
+          return { id: null, ask: null, promise: Promise.resolve(null), capped: true };
+        }
+      }
       const id = crypto.randomUUID();
       const full = { ...ask, id, at: now(), expiresAt: now() + timeoutMs };
       let settle;

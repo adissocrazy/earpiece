@@ -9,6 +9,7 @@
   "quietHours": { "start": "23:00", "end": "08:00", "allow": ["needs_input"] },
   "chimes": true,
   "announceAgent": true,
+  "remote": { "enabled": false, "summarize": "when_no_line", "relayUrl": null },
   "agents": {
     "claude-code": { "label": "Claude" },
     "codex": { "voice": "tabitha", "minTurnSeconds": 0 },

@@ -58,7 +58,8 @@ export function buildInbox({ asks = [], sessions = [], cleared = {}, answered = 
       at: a.at,
       line: a.line,
       ...(kind === "permission" ? { tool: a.tool, detail: a.detail, why: a.why, canAlways: a.canAlways, alwaysRule: a.alwaysRule, partial: a.partial } : {}),
-      ...(a.questions ? { questions: a.questions } : {}),
+      ...(a.questions ? { questions: a.questions, ...(a.detail ? { detail: a.detail } : {}) } : {}),
+      ...(a.remote ? { remote: true, agentKind: a.remote.kind || null, link: a.remote.link || null, allowText: a.remote.allowText !== false } : {}),
       ...(options.length ? { options } : {}),
       run: bySession.get(key(a.agent, a.session))?.run || null,
     });
@@ -86,6 +87,7 @@ export function buildInbox({ asks = [], sessions = [], cleared = {}, answered = 
       run: s.run || null,
       replyId: reply?.id || null,
       ...(options.length ? { options } : {}),
+      ...(s.remote ? { remote: true, agentKind: s.agentKind || s.remote.kind || null, link: s.link || s.remote.link || null } : {}),
     };
     (!waiting ? finished : item.at < now - OLD_MS ? older : needs).push(item);
   }

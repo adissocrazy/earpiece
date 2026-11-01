@@ -24,16 +24,31 @@ export function registerAdapter(a) {
 
 const titleCase = (id) => String(id).replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+const KIND_NAME = { grokbot: "Grok Bot", dots: "Dots", openclaw: "OpenClaw", hermes: "Hermes", custom: "Remote" };
+
+// Cloud agents share one pass-through. The paired name lives in config (`agents[hub_id].label`);
+// this name is only the fallback. `remote: true` is how the UI tells them from a local agent.
+function remoteAdapter(id) {
+  const kind = String(id).split(".")[1] || "custom";
+  return {
+    id,
+    name: KIND_NAME[kind] || titleCase(kind),
+    remote: true,
+    generic: true,
+    toEvents: (e) => [{ ...e, agent: id }],
+  };
+}
+
 // Unknown ids get a pass-through adapter, so `earpiece emit --agent aider` works with no code.
 export function getAdapter(id) {
-  return (
-    ADAPTERS.get(id) || {
-      id,
-      name: titleCase(id),
-      generic: true,
-      toEvents: (e) => [{ ...e, agent: id }],
-    }
-  );
+  if (ADAPTERS.has(id)) return ADAPTERS.get(id);
+  if (String(id || "").startsWith("remote.")) return remoteAdapter(id);
+  return {
+    id,
+    name: titleCase(id),
+    generic: true,
+    toEvents: (e) => [{ ...e, agent: id }],
+  };
 }
 
 export const listAdapters = () => [...ADAPTERS.values()];

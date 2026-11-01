@@ -23,6 +23,8 @@ import { isKnownLang, LANG_NAMES, langLabel, phrase } from "../i18n.mjs";
 import { BIN, HOME, P, ROOT } from "../paths.mjs";
 import { appClosed, currentMode, inQuietHours, QUIET_ALLOW_DEFAULT, setMode } from "../policy.mjs";
 import { ago, ensureDirs, log, now, parseFlags, projectName, readJson, which } from "../util.mjs";
+import { reservedAgentId } from "../remote/protocol.mjs";
+import { cmdRemote } from "./remote.mjs";
 import { listEngines } from "../voice/engines/index.mjs";
 import { fetchVoices, findVoice } from "../voice/engines/smallest.mjs";
 import { speak } from "../voice/speak.mjs";
@@ -67,6 +69,20 @@ Control
                                         floating card (Claude Code, Codex; needs the app or \`serve\`)
   earpiece status
   earpiece doctor                      check every hook and config points at this copy, the hub and keys
+
+Remote agents (Pro)
+  earpiece remote status                        plan, toggle, transport, device id, paired count
+  earpiece remote on|off                        toggle config.remote.enabled
+  earpiece remote pair [--name Avery] [--json]  print a pairing code and approve the claim
+  earpiece remote list [--json]                 paired agents
+  earpiece remote revoke <name|agent_id> [--yes]
+  earpiece remote rotate <name|agent_id> [--yes]
+  earpiece remote devices [--remove <device_id>]
+  earpiece remote emit --session s --status working|needs_you|done|error
+                                        [--token epa_…] [--title t] [--line l] [--text …]
+                                        [--prompt p] [--option key=Label]… [--allow-text] [--link https://…]
+                                        act as an agent (needs EARPIECE_AGENT_TOKEN or --token)
+  earpiece remote replies [--token …] [--wait 25] [--ack] [--json]
 
 Skills & MCP
   earpiece sync [--full]                which MCP servers and skills each tool has (Claude Code, Codex, Claude Desktop)
@@ -124,6 +140,10 @@ async function cmdEmit(rest) {
   let ev = {};
   if (!process.stdin.isTTY && !flags.type) ev = parseJson(await readStdin(1000));
   const agent = flags.agent || ev.agent || "cli";
+  if (reservedAgentId(agent)) {
+    process.exitCode = 2;
+    return console.error("earpiece: reserved agent id");
+  }
   ev = {
     ...ev,
     agent,
@@ -590,6 +610,8 @@ export async function main(argv) {
       return runWorker(rest[0]);
     case "emit":
       return cmdEmit(rest);
+    case "remote":
+      return cmdRemote(rest);
     case "run":
       return cmdRun(rest);
     case "say": {

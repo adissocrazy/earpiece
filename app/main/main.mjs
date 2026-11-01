@@ -5,6 +5,7 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, safeStorage, screen, session, shell, systemPreferences, Tray } from "electron";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createDashboard, tidyPath } from "./dashboard.mjs";
@@ -20,10 +21,10 @@ const asset = (f) => path.join(APP_ROOT, "build", f);
 const core = (rel) => import(pathToFileURL(path.join(CORE, rel)).href);
 
 const DAY = 24 * 3600_000;
-let tray, popover, win, hub, dash, updater, telemetry, asks = null, hubError = null, authError = null;
+let tray, popover, win, hub, dash, updater, telemetry, asks = null, hubError = null, authError = null, remoteRt = null;
 let quitting = false;
 let lib = {};
-const SECTIONS = ["overview", "agents", "voice", "quiet", "keys", "activity", "general"];
+const SECTIONS = ["overview", "agents", "remote", "voice", "quiet", "keys", "activity", "general"];
 
 // App preferences that aren't Earpiece settings (those live in ~/.earpiece/config.json).
 const prefs = {
@@ -164,6 +165,7 @@ async function openBilling(body) {
     const until = Date.now() + 10 * 60_000;
     billingPoll = setInterval(async () => {
       await syncAccount();
+      await remoteRt?.sync?.().catch(() => {});
       refresh();
       if (plan?.plan === "pro" || Date.now() > until) clearInterval(billingPoll);
     }, 15_000);
@@ -294,7 +296,7 @@ async function start() {
         arch: process.arch,
         locale: app.getLocale(),
         agents: hookStatus().filter((h) => h.target).map((h) => h.id),
-        features: { ...features({ config: lib.config(), prefs: prefs.get(), keys: dash.keyStatus(), stats: dash.stats() }), plan: plan?.plan || "free" },
+        features: { ...features({ config: lib.config(), prefs: prefs.get(), keys: dash.keyStatus(), stats: { ...dash.stats(), ...(remoteRt?.telemetry?.() || {}) } }), plan: plan?.plan || "free" },
       }),
     });
     telemetry.start();
@@ -305,8 +307,26 @@ async function start() {
     for (const id of ["claude-code", "codex"]) if (lib.getAdapter(id)?.isInstalled?.()) connectAgents(id);
     prefs.set("replyHooksAdded", true);
   }
-  syncAccount().then(refresh);
-  setInterval(() => syncAccount().then(refresh), 10 * 60_000).unref?.();
+  const { createRemoteRuntime } = await core("src/remote/runtime.mjs");
+  remoteRt = createRemoteRuntime({
+    token: () => auth.accessToken(),
+    plan: () => plan?.plan || "free",
+    signedIn: () => Boolean(auth.user()),
+    asks,
+    log: (e) => lib.log?.(e),
+    version: app.getVersion(),
+    deviceName: () => {
+      try {
+        return os.hostname();
+      } catch {
+        return "Mac";
+      }
+    },
+    onChange: () => refresh(),
+    openExternal: (url) => shell.openExternal(url),
+  });
+  syncAccount().then(() => remoteRt.sync().catch(() => {})).then(refresh);
+  setInterval(() => syncAccount().then(() => remoteRt?.sync().catch(() => {})).then(refresh), 10 * 60_000).unref?.();
   await loadPro();
   // ⌥⌘I opens the notch panel on "Needs you", from any app.
   if (!globalShortcut.register(PANEL_KEY, () => openPanel())) lib.log({ error: "panel: shortcut ⌥⌘I is taken" });
@@ -359,6 +379,9 @@ function state() {
       // The row already shows the agent and project, so drop them from the spoken line.
       // Once you mark it done, the old question is stale; say so instead.
       lastLine: s.status === "done" && s.markedByUser >= (s.updated || 0) - 5 ? "Marked done by you" : lib.stripLeadIn(s.lastLine || "", { agentName: agent, project }),
+      remote: Boolean(s.remote) || String(s.agent).startsWith("remote."),
+      agentKind: s.remote?.kind || null,
+      link: typeof s.remote?.link === "string" ? s.remote.link : null,
     };
   });
   const order = { waiting: 0, error: 1, working: 2, done: 3, idle: 4 };
@@ -663,7 +686,12 @@ function inboxList(st = state()) {
 let inboxTimer = null;
 function sendInbox() {
   clearTimeout(inboxTimer);
-  inboxTimer = setTimeout(() => cardWin && cardReady && cardWin.webContents.send("card-inbox", inboxList()), 60);
+  inboxTimer = setTimeout(() => {
+    if (!cardWin || !cardReady) return;
+    const error = remoteRt?.snapshot?.().inboxError || "";
+    cardWin.webContents.send("card-inbox", { ...inboxList(), ...(error ? { error } : {}) });
+    if (error) remoteRt.handle("clearError").catch(() => {});
+  }, 60);
 }
 
 // Open the notch panel on "Needs you" (on one item when `focus` is given). ⌥⌘I, the menus and Talk.
@@ -756,7 +784,7 @@ function presentCard(c) {
   const a = c.agent ? lib.getAdapter(c.agent) : null;
   const agentName = c.agent ? lib.agentConfig(lib.config(), c.agent).label || a?.name || c.agent : "Earpiece";
   lastLine = { c, at: Date.now() };
-  deliverCard({ ...lib.cardPayload(c, { agentName, project: c.project }), reply: c.session ? replyFor(c.agent, c.session) : null });
+  deliverCard({ ...lib.cardPayload(c, { agentName, project: c.project }), remote: String(c.agent || "").startsWith("remote."), reply: c.session ? replyFor(c.agent, c.session) : null });
 }
 
 // For a soft reply that holds the agent (Codex): only while you're away from its terminal. Unknown
@@ -789,10 +817,11 @@ let panelAt = 0;
 // The question the mini shows while it waits: the oldest one. The panel lists them all.
 function askPayload(hard) {
   const a = lib.navItems(hard)[0];
-  return { id: a.id, line: a.line, kind: "needs_input", state: "ask", agentId: a.agent, agentName: agentLabel(a.agent), session: a.session || null, project: a.project || null, more: hard.length - 1, at: a.at, ask: { id: a.id } };
+  return { id: a.id, line: a.line, kind: "needs_input", state: "ask", agentId: a.agent, agentName: agentLabel(a.agent), session: a.session || null, project: a.project || null, more: hard.length - 1, at: a.at, ask: { id: a.id }, remote: String(a.agent || "").startsWith("remote.") };
 }
 
 function confirmText(ask, answer) {
+  if (ask?.remote) return `Sent to ${agentLabel(ask.agent)}`;
   if (ask.kind !== "permission") return "Understood, continuing in the background";
   const what = ask.tool || "request";
   if (answer.behavior === "deny") return `Denied ${what}`;
@@ -931,10 +960,12 @@ async function inboxAct(v) {
         break;
       }
       case "terminal": // the terminal asks instead, and you go there
+        if (it.remote) return openRemote(it);
         asks.cancel(it.id, "terminal");
         jumpToSession(it.agentId, it.session, { fallback: false });
         break;
       case "open": // opening an item counts as seeing it (jumpToSession marks it)
+        if (it.remote) return openRemote(it);
         jumpToSession(it.agentId, it.session, { fallback: false });
         break;
       case "clear":
@@ -1195,7 +1226,19 @@ function appMenu() {
 // in: the exact iTerm2 or Terminal tab, the editor window with its folder, or just the app. See
 // src/hub/jump.mjs. With nowhere to go, the dashboard opens instead.
 
+function openRemote(it) {
+  let href = null;
+  try {
+    const u = new URL(String(it.link || ""));
+    if (u.protocol === "https:") href = u.href;
+  } catch {}
+  // A cloud agent has no terminal. The link opens only when the user pressed O and it is https.
+  if (!href) return { ok: false, error: `${it.agent} runs in the cloud. Nothing to open.` };
+  return shell.openExternal(href).then(() => ({ ok: true }));
+}
+
 async function jumpToSession(agent, session, { fallback = true } = {}) {
+  if (String(agent || "").startsWith("remote.")) return { ok: false, error: `${agentLabel(agent)} runs in the cloud. Nothing to open.` };
   if (cardWin?.isFocusable()) focusReturn = false; // the panel folds after this; don't refocus the app before
   const a = agent ? String(agent) : null;
   const s = a && session ? lib.getSession(a, String(session)) : null;
@@ -1306,6 +1349,16 @@ ipcMain.handle("dictate", async (e, action, bytes, mime) => {
   return { ok: false, error: "unknown action" };
 });
 
+ipcMain.handle("remote", async (e, action, value) => {
+  // Settings only. The notch panel answers through inbox-act, which already waited out the 2 s undo.
+  if (!win || e.sender !== win.webContents) return { ok: false, error: "not available" };
+  if (!remoteRt) return { ok: false, error: "not available" };
+  try {
+    return { ok: true, value: await remoteRt.handle(String(action || ""), value && typeof value === "object" ? value : {}) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 ipcMain.handle("pro", async (e, action, value) => {
   if (!pro?.handle) return { ok: false, error: "not available" };
   try {

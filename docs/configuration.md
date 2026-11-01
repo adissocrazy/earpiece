@@ -27,6 +27,9 @@
 | `replyFromNotch` | `true` | a Reply on every finished line in the notch (Claude Code: non-blocking asyncRewake Stop hook, 30 min; Codex: held 60 s, only while you're away from its terminal). Needs the Mac app and the card on. General switch. See [answer-from-card.md](answer-from-card.md#reply-from-the-notch) |
 | `answerFromCard` | `false` | let the floating card approve, deny or reply to Claude Code and Codex. Installs blocking `PermissionRequest` and `Stop` hooks; needs the Mac app and the card on. Set it with `earpiece answers on\|off` or the General switch. See [answer-from-card.md](answer-from-card.md) |
 | `announceAgent` | `false` | prefix lines with the agent name |
+| `remote.enabled` | `false` | connect to the remote-agent relay (Pro). Off means no relay calls |
+| `remote.summarize` | `"when_no_line"` | `"never"` skips the summary when a remote event has no `line` |
+| `remote.relayUrl` | `null` | relay base URL; `EARPIECE_RELAY_URL` overrides it |
 | `agents` | `{}` | per-agent overrides, below |
 | `codexChain` | `null` | written by `earpiece install --chain`; your original Codex notify command. Earpiece runs it after each Codex turn with `EARPIECE_FORWARDED=1` set, so a wrapper that calls Earpiece back can't loop. |
 
@@ -52,6 +55,7 @@ Adapter ids: `claude-code`, `codex`, `run` (for `earpiece run`), and whatever yo
 | `config.json` | the settings above |
 | `mode.json` | `on`, `quiet` or `off`, and when it ends |
 | `sessions/` | one JSON file per agent session, shown by `earpiece agents` |
+| `remote/state.json` | remote-agent device id, stream cursor, and paired-agent cache (0600) |
 | `log.jsonl` | every spoken or skipped line, warnings and errors; secrets are redacted |
 | `last-spoken.json` | the last line, for the 60-second duplicate check |
 | `flushed.json` | when `earpiece stop` last ran; lines queued before then are dropped |

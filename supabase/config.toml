@@ -1,0 +1,5 @@
+# Remote agents authenticate agent tokens themselves (they are not Supabase JWTs).
+project_id = "earpiece"
+
+[functions.relay]
+verify_jwt = false

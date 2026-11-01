@@ -24,6 +24,10 @@ With Reply from the notch on, the mic in the notch's reply box records only whil
 
 Earpiece Pro is sold through Dodo Payments (merchant of record): checkout and the billing portal open in your browser on Dodo's pages, and Earpiece never sees your card. The `billing` function creates the checkout with your account id attached; Dodo's signed webhook (`dodo-webhook`, Standard Webhooks signature checked) updates your plan. Only the plan, its status, renewal date and Dodo's customer and subscription ids are stored.
 
+## Remote agents
+
+Remote agents (Pro) are cloud assistants that show up in the notch. The Mac makes outbound HTTPS only; it never opens a port, and `hub.sock` stays local. Remote text is untrusted: it is redacted and cleaned before it is stored, shown, or spoken, and a remote frame cannot run a command, jump to a terminal, open a URL on its own, or answer a local agent. The only thing a remote answer does is POST that answer back to the same agent. Tokens are `epa_live_…`, stored as a sha256 hash, shown once, and revoked from Settings. The relay keeps events and replies at most 24 hours. See [docs/remote-agents.md](docs/remote-agents.md) for what leaves the Mac (device registration, acks, pairing approvals, and the answers you send — never local sessions, paths, or code).
+
 ## What Earpiece edits
 
 `earpiece install` edits `~/.claude/settings.json` and `~/.codex/config.toml`, writing a timestamped `.bak-earpiece-*` copy first. `earpiece uninstall` removes only entries that run Earpiece (or the older `jarvis.mjs` and `jarvis-hook`).

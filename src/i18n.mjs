@@ -44,6 +44,9 @@ export const PHRASES = {
     runFail: (p, l) => `${p}. ${l} failed.`,
     failed: (p) => `${p} hit an error.`,
     test: "Earpiece is on. You'll hear from me when your agents finish or need you.",
+    remoteDone: (name) => `${name} is done.`,
+    remoteNeeds: (name) => `${name} needs you.`,
+    remoteQuestions: (name, n) => `${name} has ${n} ${Number(n) === 1 ? "question" : "questions"} waiting.`,
   },
   hinglish: {
     waiting: (p) => `${p} आपका wait कर रहा है।`,

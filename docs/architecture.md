@@ -3,6 +3,8 @@
 ```text
 src/
   cli/main.mjs            command dispatch; every entry file calls run()
+  remote/                 cloud agents (Pro): protocol, sanitize, outbound client, bridge
+  cli/remote.mjs          `earpiece remote` (pair, list, emit, replies)
   adapters/               one file per agent: native payload → hub events
     index.mjs             registry; unknown ids get a pass-through adapter
     claude-code.mjs       ~/.claude/settings.json hooks

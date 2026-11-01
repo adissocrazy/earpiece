@@ -10,12 +10,13 @@ export const isEcho = () => process.env.EARPIECE_ECHO === "1" || isDry();
 
 // State holds agent messages, so it is private to the user (0700 dirs, 0600 files).
 export function ensureDirs() {
-  for (const d of [HOME, P.sessions, P.tmp]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
+  for (const d of [HOME, P.sessions, P.tmp, P.remote]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
 }
 
 // Strip anything secret-shaped before it is spoken, logged, shown, or sent for a summary.
 // Used on agent messages as well as provider error text, so it errs on the side of removing.
-const SECRET_PATTERNS = [
+// Exported so the remote connector can keep a byte-for-byte copy (test/connector.test.mjs).
+export const SECRET_PATTERNS = [
   [/\b(sk|pk|rk)[-_][A-Za-z0-9*_-]{6,}/g, "[redacted]"], // OpenAI, Stripe, Anthropic-style keys
   [/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, "[redacted]"], // GitHub
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]"], // Slack
@@ -27,6 +28,11 @@ const SECRET_PATTERNS = [
   // NAME=value where the name says it is secret: OPENAI_API_KEY=…, password: …, "token": "…"
   [/\b([\w-]*(?:api[_-]?key|secret|token|passw(?:or)?d)[\w-]*)(["']?\s*[:=]\s*["']?)[^\s"',;]{4,}/gi, "$1$2[redacted]"],
   [/\b(Bearer|key|token)(["':=\s]+)(?=[A-Za-z0-9*._-]*[0-9*])[A-Za-z0-9*._-]{8,}/gi, "$1$2[redacted]"],
+  // Remote-agent credentials. Specific prefixes, so a leak in a cloud agent's text is caught
+  // even when the string is shorter than the opaque-token rule below.
+  [/epa_(?:live|test)_[A-Za-z0-9]{8,}/g, "[redacted]"],
+  [/\bcls_[A-Za-z0-9]{8,}/g, "[redacted]"],
+  [/\bwhsec_[A-Za-z0-9]{8,}/g, "[redacted]"],
   // Long opaque strings (32+ chars mixing letters and digits) are almost never worth reading out.
   [/\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{32,}\b/g, "[redacted]"],
 ];

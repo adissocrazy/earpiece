@@ -10,6 +10,7 @@ import { configFiles } from "../adapters/claude-desktop.mjs";
 import { apiKey, config } from "../config.mjs";
 import { EDITORS, editorWindows } from "../hub/editors.mjs";
 import { BIN, P, ROOT } from "../paths.mjs";
+import { remoteDoctorLines } from "./remote.mjs";
 
 /** Absolute paths in a config file that belong to Earpiece (or its old name). */
 export function earpiecePaths(text) {
@@ -124,6 +125,7 @@ export async function cmdDoctor() {
   console.log(health ? `\n  ✓ hub running (pid ${health.pid}, ${health.version || "?"})` : "\n  - hub not running (hooks fall back to running Earpiece directly; open the Mac app or `earpiece serve`)");
   const cfg = config();
   for (const k of ["SMALLEST_API_KEY", "OPENAI_API_KEY"]) console.log(`  ${apiKey(cfg, k) ? "✓" : "-"} ${k} ${apiKey(cfg, k) ? "found" : "missing"}`);
+  for (const line of await remoteDoctorLines()) console.log(line.startsWith("  ") ? line : `  ${line}`);
   if (cfg.envFile) console.log(`  ${fs.existsSync(cfg.envFile) ? "✓" : "✗"} keys file ${tilde(cfg.envFile)}`), fs.existsSync(cfg.envFile) || problems++;
   console.log(
     problems
