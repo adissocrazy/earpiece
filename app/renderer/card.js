@@ -203,10 +203,12 @@ function show(c) {
     setLogo($("miniLogo"), c.agentId);
     $("who").textContent = c.agentName || "Earpiece";
     $("miniName").textContent = c.agentName || "Earpiece";
+    $("who").querySelector?.(".cloud")?.remove?.();
+    if (c.remote && window.EarpieceLogos?.cloud) $("who").append(window.EarpieceLogos.cloud());
     $("project").textContent = c.project || "";
     $("line").textContent = c.line;
     island.title = isAsk ? "" : c.line;
-    $("full").querySelector(".head").title = isAsk ? "" : c.update ? "Update Earpiece" : `Go to ${c.agentName || "the agent"}`;
+    $("full").querySelector(".head").title = c.remote ? "Remote · via Earpiece cloud" : isAsk ? "" : c.update ? "Update Earpiece" : `Go to ${c.agentName || "the agent"}`;
   }
   $("replyBtn").hidden = !(c.reply && !isAsk);
   const chip = $("chip");
@@ -273,12 +275,14 @@ function renderAgents() {
   list.replaceChildren(
     ...agents.rows.filter((r) => !r.run).map((r) => {
       const li = el("li", r.status);
-      li.title = `Go to ${r.agent}${r.project ? ` · ${r.project}` : ""}`;
+      li.title = r.remote ? "Remote · via Earpiece cloud" : `Go to ${r.agent}${r.project ? ` · ${r.project}` : ""}`;
       const av = el("span", "av");
       av.append(window.EarpieceLogos.logo(r.agentId));
       const tx = el("div", "tx");
       const mt = el("div", "mt");
-      mt.append(el("b", "", r.agent), el("span", "pj", r.project || ""), el("span", "st", STATUS[r.status] || r.status), el("span", "age", r.updated ? ago(now - skew - r.updated) : ""));
+      mt.append(el("b", "", r.agent));
+      if (r.remote && window.EarpieceLogos?.cloud) mt.append(window.EarpieceLogos.cloud());
+      mt.append(el("span", "pj", r.project || ""), el("span", "st", STATUS[r.status] || r.status), el("span", "age", r.updated ? ago(now - skew - r.updated) : ""));
       tx.append(mt);
       if (r.lastLine) tx.append(el("p", "ln", r.lastLine));
       // ×: off the list (it comes back with the agent's next update).
@@ -293,7 +297,8 @@ function renderAgents() {
       li.append(av, tx, x);
       li.addEventListener("click", (e) => {
         e.stopPropagation();
-        J.card("jump", { agent: r.agentId, session: r.session });
+        // Remote agents have nothing to jump to. O in Needs you opens an https link, if they sent one.
+        if (!r.remote) J.card("jump", { agent: r.agentId, session: r.session });
         setView(idle());
       });
       return li;

@@ -14,9 +14,17 @@ import { HELD_REPLY_TIMEOUT_MS, MAX_OPEN_ASKS, REPLY_TIMEOUT_MS } from "./asks.m
 import { EVENT_TYPES, normalizeEvent } from "./events.mjs";
 import { ingestEvent } from "./hub.mjs";
 import { HEADER as ORIGIN_HEADER, createOriginTracker, parseOriginHeader } from "./origin.mjs";
+import { reservedAgentId } from "../remote/protocol.mjs";
 
 const MAX_BODY = 1024 * 1024;
 const AGENT_ID = /^[A-Za-z0-9_.-]{1,64}$/;
+
+// `remote.*` is only minted when a cloud agent is paired. A local hook can't claim it.
+function rejectAgent(agent) {
+  if (!AGENT_ID.test(agent)) return "bad agent id";
+  if (reservedAgentId(agent)) return "reserved agent id";
+  return null;
+}
 
 function isLive(socket) {
   return new Promise((resolve) => {
@@ -108,7 +116,8 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
       const hook = /^\/hook\/([^/]+)$/.exec(url.pathname);
       if (hook) {
         const agent = decodeURIComponent(hook[1]);
-        if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
+        const badAgent = rejectAgent(agent);
+        if (badAgent) return reply(400, { error: badAgent });
         const payload = parse(raw);
         // The session moved on by itself (new prompt, the tool ran): questions about it are stale.
         if (asks?.size()) {
@@ -125,7 +134,8 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
       const replyRoute = /^\/reply\/([^/]+)$/.exec(url.pathname);
       if (replyRoute) {
         const agent = decodeURIComponent(replyRoute[1]);
-        if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
+        const badReply = rejectAgent(agent);
+        if (badReply) return reply(400, { error: badReply });
         const payload = parse(raw);
         const adapter = getAdapter(agent);
         const open = asks?.available() && config().replyFromNotch === true && asks.size() < MAX_OPEN_ASKS;
@@ -158,7 +168,8 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
       const askRoute = /^\/ask\/([^/]+)$/.exec(url.pathname);
       if (askRoute) {
         const agent = decodeURIComponent(askRoute[1]);
-        if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
+        const badAsk = rejectAgent(agent);
+        if (badAsk) return reply(400, { error: badAsk });
         const payload = parse(raw);
         const adapter = getAdapter(agent);
         // An agent Earpiece started in its own terminal is run from the notch: its questions always come here.
@@ -216,7 +227,8 @@ export async function startHubServer({ socket = P.socket, deps = {}, onEvent = (
       if (url.pathname === "/emit") {
         const body = parse(raw);
         const agent = String(body.agent || "cli");
-        if (!AGENT_ID.test(agent)) return reply(400, { error: "bad agent id" });
+        const badEmit = rejectAgent(agent);
+        if (badEmit) return reply(400, { error: badEmit });
         if (!EVENT_TYPES.includes(body.type || "info")) return reply(400, { error: `unknown type ${body.type}` });
         const ev = normalizeEvent({ ...body, agent }, agent);
         run("emit", () => ingestEvent(ev, opts));

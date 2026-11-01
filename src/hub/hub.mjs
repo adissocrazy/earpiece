@@ -202,6 +202,13 @@ export async function processEvent(input, deps = {}) {
   );
 
   if (!line) return { skipped: "nothing_to_say" };
+  // Remote backlog and the per-agent voice cooldown set this. The card still shows; nothing is said.
+  // Local events never set it, so their path is unchanged.
+  if (ev.silent) {
+    showCard({ line, kind: say.kind, agent: ev.agent, project, session: ev.session, state: "silent", reason: String(ev.silent) });
+    log({ skipped: String(ev.silent), line, ...meta });
+    return { skipped: String(ev.silent) };
+  }
   if (!cfg.enabled) {
     showCard({ line, kind: say.kind, agent: ev.agent, project, session: ev.session, state: "silent", reason: "agent_disabled" });
     log({ skipped: "agent_disabled", line, ...meta });

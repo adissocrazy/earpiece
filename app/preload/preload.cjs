@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld("earpiece", {
   // Voice replies: "start" checks the mic permission; "transcribe" turns a recorded clip into text.
   dictate: (action, bytes, mime) => ipcRenderer.invoke("dictate", action, bytes, mime),
   previewCard:() => ipcRenderer.invoke("card-preview"),
+  // Remote agents (Pro). The main window only; the relay is called from the main process.
+  remote: async (action, value) => {
+    const r = await ipcRenderer.invoke("remote", action, value);
+    if (!r?.ok) throw new Error(r?.error || "Remote agents are unavailable.");
+    return r.value;
+  },
   // Pro features (loaded only when present): one checked entry point and one event channel.
   pro: (action, value) => ipcRenderer.invoke("pro", action, value),
   onPro: (cb) => {

@@ -27,6 +27,8 @@ export const DEFAULTS = {
   answerFromCard: false,
   replyFromNotch: true, // a Reply on the card after every finished turn (see docs/answer-from-card.md)
   announceAgent: false, // prefix lines with the agent name ("Codex, checkout. …")
+  // Cloud agents (Pro). Off until a pairing succeeds. relayUrl null uses the Supabase function.
+  remote: { enabled: false, summarize: "when_no_line", relayUrl: null },
   // Per-agent overrides, keyed by adapter id:
   //   { "codex": { "voice": "sophie", "minTurnSeconds": 0 }, "claude-code": { "enabled": true } }
   // Supported keys: enabled, voice (Smallest voice id), model, openaiVoice, sayVoice, minTurnSeconds, label.
@@ -41,6 +43,7 @@ export function config() {
     smallest: { ...DEFAULTS.smallest, ...(user.smallest || {}) },
     tones: { ...DEFAULTS.tones, ...(user.tones || {}) },
     agents: { ...(user.agents || {}) },
+    remote: { ...DEFAULTS.remote, ...(user.remote || {}) },
   };
 }
 
@@ -58,11 +61,15 @@ export function updateConfig(patch) {
 // Effective settings for one agent: global config with that agent's overrides applied.
 export function agentConfig(cfg, agentId) {
   const o = (cfg.agents && cfg.agents[agentId]) || {};
+  // Cloud tasks are one coarse update, not a stream of tool calls, so a `done` always lands.
+  // The name prefix is forced: a remote line must not be speakable as if it were Claude or Codex.
+  const remote = String(agentId || "").startsWith("remote.");
   return {
     ...cfg,
     enabled: o.enabled !== false,
     label: o.label || null,
-    minTurnSeconds: o.minTurnSeconds ?? cfg.minTurnSeconds,
+    minTurnSeconds: o.minTurnSeconds ?? (remote ? 0 : cfg.minTurnSeconds),
+    announceAgent: remote ? true : cfg.announceAgent,
     voice: o.openaiVoice || cfg.voice,
     sayVoice: o.sayVoice || cfg.sayVoice,
     smallest: { ...cfg.smallest, ...(o.voice ? { voice: o.voice } : {}), ...(o.model ? { model: o.model } : {}) },

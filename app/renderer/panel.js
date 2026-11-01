@@ -81,7 +81,7 @@
     if (it.kind === "question") {
       const p = (picks[it.id] ||= { qi: 0, answers: {} });
       const qu = it.questions[p.qi];
-      return qu.options.map((o) => ({ label: o.label, note: o.description, on: [].concat(p.answers[qu.question] || []).includes(o.label), run: () => choose(it, o.label) }));
+      return qu.options.map((o) => ({ label: o.label, note: o.description, cls: o.style === "danger" ? "no" : o.style === "primary" ? "go" : "", on: [].concat(p.answers[qu.question] || []).includes(o.label), run: () => choose(it, o.label) }));
     }
     if (it.kind === "permission") {
       const out = [];
@@ -129,6 +129,8 @@
   }
 
   function open(it) {
+    // A remote agent has no terminal on this Mac. O opens its https link, or says so.
+    if (it.remote) return J.card("inbox-act", { id: it.id, action: "open" }).then((r) => (r?.ok ? null : error(r?.error || "Nothing to open.")));
     if (isAsk(it)) return send(it, "Back to the terminal:", { action: "terminal" });
     J.card("inbox-act", { id: it.id, action: "open" }).then((r) => (r?.ok ? window.dispatchEvent(new Event("panel-close")) : error(r?.error)));
   }
@@ -140,6 +142,11 @@
     c.dataset.id = it.id;
     const meta = el("div", "meta");
     meta.append(window.EarpieceLogos?.logo(it.agentId) || el("span"), el("span", "who", it.agent));
+    if (it.remote) {
+      const cloud = window.EarpieceLogos?.cloud?.() || el("span", "cloud", "☁");
+      cloud.title = "Remote · via Earpiece cloud";
+      meta.append(cloud);
+    }
     if (it.project) meta.append(el("span", "", "·"), el("span", "pj", it.project));
     meta.append(el("span", `dot ${DOT[it.kind] || ""}`), el("span", "", STATUS[it.kind] || ""), el("span", "age", it.at ? ago(Date.now() - it.at) : ""));
     c.append(meta);
@@ -167,7 +174,7 @@
     if (cs.length) {
       const box = el("div", row ? "btns" : "opts");
       cs.forEach((ch, i) => {
-        const b = el("button", it.kind === "permission" ? `btn ${ch.cls || ""}` : row ? "btn quick" : `opt${ch.on ? " on" : ""}`);
+        const b = el("button", `${it.kind === "permission" || row ? "btn" : "opt"}${row && it.kind !== "permission" ? " quick" : ""}${ch.on ? " on" : ""}${ch.cls ? ` ${ch.cls}` : ""}`);
         b.append(el("kbd", "", String(i + 1)), el("span", "", ch.label));
         if (ch.note) b.append(el("small", "", ch.note));
         b.disabled = held.has(it.id);
@@ -187,8 +194,8 @@
       b.onclick = (e) => (e.stopPropagation(), (sel = it.id), fn());
       acts.append(b);
     };
-    if (canReply(it) && replying !== it.id) btn("R", it.kind === "question" ? "Other…" : "Reply", () => startReply(it));
-    btn("O", isAsk(it) ? "Answer in terminal" : "Open", () => open(it));
+    if (canReply(it) && replying !== it.id && it.allowText !== false) btn("R", it.kind === "question" ? "Other…" : "Reply", () => startReply(it));
+    btn("O", it.remote ? (it.link ? "Open link" : "Open") : isAsk(it) ? "Answer in terminal" : "Open", () => open(it));
     if (!isAsk(it)) btn("E", "Clear", () => clear(it));
     c.append(acts);
 
@@ -324,7 +331,11 @@
   }
 
   window.EarpiecePanel = {
-    update: (l) => ((data = { needs: [], older: [], finished: [], ...(l || {}) }), render()),
+    update: (l) => {
+      data = { needs: [], older: [], finished: [], ...(l || {}) };
+      if (l?.error) error(l.error);
+      render();
+    },
     count: () => data.needs.length,
     setTab,
     tab: () => tab,

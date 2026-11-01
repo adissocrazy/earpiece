@@ -68,6 +68,18 @@ test("features are booleans, numbers and short ids only: no free text, no key va
     spoken_today: 7,
     skipped_today: 2,
     last_engine: "smallest",
+    remote_enabled: false,
+    remote_agents: 0,
+    remote_has_grokbot: false,
+    remote_has_dots: false,
+    remote_has_openclaw: false,
+    remote_has_hermes: false,
+    remote_has_custom: false,
+    remote_events_today: 0,
+    remote_questions_today: 0,
+    remote_answers_today: 0,
+    remote_transport: "off",
+    remote_reconnects_today: 0,
   });
   assert.equal(features({ config: { speakLanguage: "a sentence with spaces" } }).language, "en");
   assert.equal(features({}).spoken_today, 0);

@@ -22,6 +22,7 @@ function h(tag, attrs, ...kids) {
 const SECTIONS = {
   overview: "Overview",
   agents: "Agents",
+  remote: "Remote agents",
   voice: "Voice",
   quiet: "Quiet",
   keys: "API Keys",
@@ -274,26 +275,22 @@ function overview() {
       h("h2", {}, "Last thing Earpiece said"),
       h("div", { class: "group" }, row(h("span", { class: "last selectable" }, `“${s.lastSpoke.text}”`), `${ago(s.lastSpoke.at)}${s.lastSpoke.engine ? ` · ${s.lastSpoke.engine}` : ""}`)),
     );
-  parts.push(h("h2", {}, "Sessions in the last 24 hours"));
-  if (!D.sessions.length) parts.push(h("div", { class: "group" }, h("div", { class: "empty" }, connected.length ? "Nothing yet. Start an agent and it shows up here." : "Connect an agent to see its sessions here.")));
-  else
-    parts.push(
-      h(
-        "div",
-        { class: "group" },
-        D.sessions.map((r) =>
-          h(
-            "div",
-            { class: "row session" },
-            h("span", { class: "mini-mark", title: r.agent }, window.EarpieceLogos.logo(r.agentId), h("span", { class: `dot ${r.status}` })),
-            h("div", { class: "label" }, h("b", {}, r.project || "Untitled"), h("small", { class: "clip" }, [r.agent, r.where, r.lastLine].filter(Boolean).join(" · "))),
-            h("span", { class: `pill ${r.status}` }, STATUS[r.status] || r.status),
-            h("time", {}, ago(r.updated)),
-            sessionActions(r),
-          ),
-        ),
-      ),
+  const sessionRow = (r) =>
+    h(
+      "div",
+      { class: "row session" },
+      h("span", { class: "mini-mark", title: r.remote ? "Remote · via Earpiece cloud" : r.agent }, window.EarpieceLogos.logo(r.agentId), h("span", { class: `dot ${r.status}` })),
+      h("div", { class: "label" }, h("b", {}, r.project || "Untitled"), h("small", { class: "clip" }, [r.agent, r.remote ? "Remote" : "", r.where, r.lastLine].filter(Boolean).join(" · "))),
+      h("span", { class: `pill ${r.status}` }, STATUS[r.status] || r.status),
+      h("time", {}, ago(r.updated)),
+      sessionActions(r),
     );
+  const localSessions = D.sessions.filter((r) => !r.remote);
+  const remoteSessions = D.sessions.filter((r) => r.remote);
+  parts.push(h("h2", {}, "Sessions in the last 24 hours"));
+  if (!localSessions.length) parts.push(h("div", { class: "group" }, h("div", { class: "empty" }, connected.length ? "Nothing yet. Start an agent and it shows up here." : "Connect an agent to see its sessions here.")));
+  else parts.push(h("div", { class: "group" }, localSessions.map(sessionRow)));
+  if (remoteSessions.length) parts.push(h("h2", {}, "Remote"), h("div", { class: "group" }, remoteSessions.map(sessionRow)));
   return parts;
 }
 
@@ -1350,7 +1347,227 @@ function packsView(tools) {
   ];
 }
 
-const VIEWS = { overview, agents, voice, quiet, keys, sync, activity, general };
+// ---------- remote agents (Pro) ----------
+// The section is always in the sidebar. Free and signed-out accounts see the upgrade, and the
+// main process makes no relay calls for them. Pairing, the list and revoke go through J.remote.
+
+let remoteData = null;
+let remotePair = null; // { step, kind, code, claim }
+let remoteBusy = false;
+
+const REMOTE_KINDS = [
+  ["grokbot", "Grok Bot", "Tell Avery: “Pair with Earpiece, code …”"],
+  ["dots", "Dots", "Give Dots the code when it asks to connect."],
+  ["openclaw", "OpenClaw", "Paste the code into OpenClaw's Earpiece setup."],
+  ["hermes", "Hermes", "Paste the code into Hermes's Earpiece setup."],
+  ["custom", "Other", "Any agent that can make an HTTPS request. The docs have a curl example."],
+];
+
+async function loadRemote() {
+  try {
+    remoteData = await J.remote("status");
+  } catch (e) {
+    remoteData = { error: e.message, plan: "free", signedIn: false, agents: [] };
+  }
+  if (section === "remote") render();
+}
+
+function remoteSection() {
+  if (!remoteData) {
+    loadRemote();
+    return [h("p", { class: "lede" }, "Loading…")];
+  }
+  const R = remoteData;
+  const explainer = "Let cloud agents like Avery (Grok Bot), Dots, OpenClaw and Hermes show up in your notch. Your Mac only connects out; nothing about your local agents leaves this Mac.";
+  if (!R.signedIn) {
+    return [
+      h("p", { class: "lede" }, explainer),
+      h("div", { class: "group" }, row("Sign in with Google to use Remote agents", "Remote agents are part of Earpiece Pro.", btn("Sign in", () => act("signIn"), "primary"))),
+    ];
+  }
+  if (R.plan !== "pro") {
+    return [
+      h("p", { class: "lede" }, explainer),
+      h("div", { class: "group pro-banner" }, row("Avery finished call prep.", "A mock of the notch row. Upgrade to hear cloud agents the same way you hear Claude and Codex.", h("span", { class: "pill" }, "Remote"))),
+      h(
+        "div",
+        { class: "group" },
+        row(
+          "Upgrade to Pro",
+          "3 days free, then $10 a month, $96 a year, or $179 once.",
+          btn("Monthly", () => act("upgrade", { interval: "month" }), "primary"),
+          btn("Yearly", () => act("upgrade", { interval: "year" })),
+          btn("Lifetime", () => act("upgrade", { interval: "lifetime" })),
+        ),
+      ),
+    ];
+  }
+  const transport = R.planLapsed ? "Upgrade to reconnect" : R.transport === "sse" ? "Connected (stream)" : R.transport === "poll" ? "Connected (polling)" : R.transport === "reconnecting" ? `Reconnecting… ${R.retryInS || ""}s` : "Off";
+  const dot = R.transport === "sse" || R.transport === "poll" ? "on" : R.transport === "reconnecting" ? "quiet" : "off";
+  const parts = [
+    h("p", { class: "lede" }, explainer),
+    h(
+      "div",
+      { class: "group" },
+      row(h("span", {}, h("span", { class: `dot ${dot}` }), " ", transport), R.planLapsed ? "Pro has lapsed. Pairings are kept for 30 days." : "The Mac connects out only while this is on and an agent is paired.", sw(R.enabled === true, async (on) => {
+        await J.remote("toggle", { enabled: on });
+        await loadRemote();
+      }, "Remote agents")),
+    ),
+  ];
+  const claim = (R.claims || [])[0];
+  if (claim && remotePair?.step !== "approve") remotePair = { step: "approve", claim };
+  if (remotePair) parts.push(remotePairDialog());
+  parts.push(h("h2", {}, "Paired agents"));
+  if (!(R.agents || []).length) parts.push(h("div", { class: "group" }, h("div", { class: "empty" }, "None yet. Pair one and it shows up in the notch.")));
+  else {
+    parts.push(h("div", { class: "group" }, R.agents.map((g) => {
+      const id = g.agent_id;
+      return h(
+        "div",
+        { class: "row" },
+        h("span", { class: "mini-mark", title: "Remote · via Earpiece cloud" }, window.EarpieceLogos.logo(g.hub_id || `remote.${g.kind}`)),
+        h(
+          "div",
+          { class: "label" },
+          h("b", {}, g.name || "Remote"),
+          h("small", {}, [g.kind, g.token_prefix, g.last_used_at ? `Last event ${ago(Date.parse(g.last_used_at))}` : "", g.events_24h != null ? `${g.events_24h} events (24 h)` : ""].filter(Boolean).join(" · ")),
+        ),
+        h("span", { class: "scope" }, (g.scopes || []).includes("questions:write") ? "Questions" : "Updates"),
+        h(
+          "div",
+          { class: "ctrl" },
+          btn("Voice…", () => go("voice")),
+          btn("Mute", async () => {
+            await act("setAgent", { id: g.hub_id, patch: { enabled: false } }, { ok: "Muted" });
+          }),
+          btn("Rotate token", async () => {
+            await J.remote("rotate", { agent_id: id });
+            toast("Token rotated. The agent must pair again.");
+          }),
+          btn("Revoke", async () => {
+            await J.remote("revoke", { agent_id: id });
+            toast("Revoked");
+            await loadRemote();
+          }),
+          btn("Test", async () => {
+            await J.remote("test", { agent_id: id });
+            toast("Test sent");
+          }),
+        ),
+      );
+    })));
+  }
+  parts.push(h("h2", {}, "Macs on this account"));
+  if (!(R.devices || []).length) parts.push(h("div", { class: "group" }, h("div", { class: "empty" }, "This Mac registers itself the first time you pair.")));
+  else parts.push(h("div", { class: "group" }, R.devices.map((d) => row(d.name || d.id, [d.this_device ? "This Mac" : "", d.last_seen_at ? `Last seen ${ago(Date.parse(d.last_seen_at))}` : ""].filter(Boolean).join(" · "), d.this_device ? null : btn("Remove", async () => {
+    await J.remote("removeDevice", { device_id: d.id });
+    await loadRemote();
+  })))));
+  parts.push(h("div", { class: "row" }, h("div", { class: "ctrl" }, btn("Pair an agent…", () => {
+    remotePair = { step: "choose" };
+    render();
+  }, "primary"), btn("Docs", () => J.remote("docs")))));
+  return parts;
+}
+
+function remotePairDialog() {
+  const p = remotePair;
+  if (p.step === "choose") {
+    return h(
+      "div",
+      { class: "group" },
+      h("div", { class: "row" }, h("div", { class: "label" }, h("b", {}, "Pair an agent"))),
+      ...REMOTE_KINDS.map(([kind, name, hint]) => row(name, hint, btn("Choose", async () => {
+        const code = await J.remote("pair", { label_hint: name === "Other" ? "Remote" : name, kind });
+        remotePair = { step: "code", kind, name, code };
+        render();
+        const tick = setInterval(() => {
+          if (section !== "remote" || remotePair?.step !== "code") return clearInterval(tick);
+          loadRemote();
+        }, 2000);
+      }))),
+      row("", "", btn("Cancel", () => {
+        remotePair = null;
+        render();
+      })),
+    );
+  }
+  if (p.step === "code" && p.code) {
+    const qr = qrNode(p.code.qr_svg);
+    return h(
+      "div",
+      { class: "group" },
+      h("div", { class: "row" }, h("div", { class: "label" }, h("b", {}, p.code.code || ""), h("div", { class: "remote-code" }, p.code.code || ""))),
+      qr ? h("div", { class: "qr" }, qr) : null,
+      h("p", { class: "lede" }, p.kind === "grokbot" ? `Tell Avery: “Pair with Earpiece, code ${p.code.code}.”` : `Give this code to ${p.name}. It expires ${p.code.expires_at || "in 10 minutes"}.`),
+      row("", "", btn("Copy", async () => {
+        await navigator.clipboard?.writeText(p.code.code || "");
+        toast("Copied");
+      }), btn("Regenerate", async () => {
+        const code = await J.remote("pair", { label_hint: p.name });
+        remotePair = { ...p, code };
+        render();
+      }), btn("Close", () => {
+        remotePair = null;
+        render();
+      })),
+    );
+  }
+  if (p.step === "approve" && p.claim) {
+    const ag = p.claim.agent || {};
+    const scopes = new Set(p.claim.requested_scopes || ["events:write", "questions:write", "replies:read"]);
+    return h(
+      "div",
+      { class: "group" },
+      row(`${ag.name || "An agent"} wants to connect`, `${ag.kind || "custom"} ${ag.version || ""}`.trim()),
+      h("label", { class: "chk" }, h("input", { type: "checkbox", checked: scopes.has("events:write"), onchange: (e) => (e.target.checked ? scopes.add("events:write") : scopes.delete("events:write")) }), "Show updates in my notch"),
+      h("label", { class: "chk" }, h("input", { type: "checkbox", checked: scopes.has("questions:write"), onchange: (e) => {
+        if (e.target.checked) (scopes.add("questions:write"), scopes.add("replies:read"));
+        else (scopes.delete("questions:write"), scopes.delete("replies:read"));
+      } }), "Ask me questions and receive my answers"),
+      row(
+        "",
+        "Deny is the default. Allow only if you started this pairing.",
+        btn("Deny", async () => {
+          await J.remote("deny", { claim_id: p.claim.claim_id });
+          remotePair = null;
+          await loadRemote();
+        }),
+        btn("Allow", async () => {
+          const approved = await J.remote("approve", { claim_id: p.claim.claim_id, scopes: [...scopes], display_name: ag.name || p.name || "Remote" });
+          remotePair = { step: "done", name: ag.name, agent_id: approved.agent_id };
+          await loadRemote();
+        }, "primary"),
+      ),
+    );
+  }
+  if (p.step === "done") {
+    return h(
+      "div",
+      { class: "group" },
+      row(`${p.name || "Agent"} is connected.`, "Send a test to prove the round trip.", btn("Send test", async () => {
+        await J.remote("test", { agent_id: p.agent_id });
+        toast("Test sent");
+      }, "primary"), btn("Done", () => {
+        remotePair = null;
+        render();
+      })),
+    );
+  }
+  return h("div");
+}
+
+function qrNode(svg) {
+  if (!svg || typeof svg !== "string") return null;
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  const el = doc.documentElement;
+  if (!el || String(el.tagName).toLowerCase() !== "svg") return null;
+  el.querySelectorAll("script,foreignObject").forEach((n) => n.remove());
+  return document.importNode(el, true);
+}
+
+const VIEWS = { overview, agents, remote: remoteSection, voice, quiet, keys, sync, activity, general };
 
 function headActions() {
   const a = [];
@@ -1398,6 +1615,7 @@ function go(s) {
   section = s;
   if (s === "activity") activityRows = null;
   if (s === "sync") syncData = null; // re-read: you may have installed something since
+  if (s === "remote") remoteData = null;
   render();
 }
 

@@ -33,6 +33,7 @@ export function notchAgents(rows, { now = Date.now(), recentMs = RECENT_MS, max 
       updated: Number(r.updated) || 0,
       lastLine: String(r.lastLine || "").slice(0, 200),
       run: r.run || null, // started by Earpiece (Pro shows these with their own controls)
+      remote: r.remote === true,
     })),
     more: Math.max(0, keep.length - max),
     active: keep.filter((r) => ACTIVE.has(r.status)).length,

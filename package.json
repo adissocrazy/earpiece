@@ -13,6 +13,7 @@
     "jarvis.mjs",
     "install.mjs",
     "examples/",
+    "connectors/",
     "docs/",
     "README.md",
     "LICENSE",

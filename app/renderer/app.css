@@ -169,6 +169,11 @@ input[type="range"] { width: 140px; accent-color: var(--accent); }
 .pill.error { background: rgba(216, 69, 58, 0.14); color: var(--red); }
 .pill.working { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .pill.done, .pill.connected { background: rgba(47, 158, 87, 0.14); color: var(--green); }
+.pill.pro { background: rgba(232, 154, 12, 0.16); color: var(--amber); margin-left: auto; }
+.nav .pill.pro { font-size: 9px; letter-spacing: 0.04em; }
+.remote-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 28px; letter-spacing: 0.12em; margin: 8px 0; }
+.qr svg { width: 168px; height: 168px; background: #fff; border-radius: 8px; }
+.scope { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--chip); color: var(--muted); }
 .empty { padding: 22px 14px; text-align: center; color: var(--muted); }
 
 /* agents */

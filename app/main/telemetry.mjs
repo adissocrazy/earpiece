@@ -39,6 +39,19 @@ export function features({ config: c = {}, prefs: p = {}, keys = [], stats: s = 
     spoken_today: num(s.spoken),
     skipped_today: num(s.skipped),
     last_engine: word(s.lastSpoke?.engine),
+    // Remote agents: counts and booleans only. Never names, titles, text or answers.
+    remote_enabled: c.remote?.enabled === true,
+    remote_agents: num(s.remoteAgents),
+    remote_has_grokbot: s.remoteHasGrokbot === true,
+    remote_has_dots: s.remoteHasDots === true,
+    remote_has_openclaw: s.remoteHasOpenclaw === true,
+    remote_has_hermes: s.remoteHasHermes === true,
+    remote_has_custom: s.remoteHasCustom === true,
+    remote_events_today: num(s.remoteEventsToday),
+    remote_questions_today: num(s.remoteQuestionsToday),
+    remote_answers_today: num(s.remoteAnswersToday),
+    remote_transport: s.remoteTransport === "sse" || s.remoteTransport === "poll" ? s.remoteTransport : "off",
+    remote_reconnects_today: num(s.remoteReconnectsToday),
   };
 }
 
