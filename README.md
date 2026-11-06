@@ -30,6 +30,36 @@ earpiece test                   # you should hear Earpiece
 
 Restart any running Claude Code or Codex sessions so they pick up the hooks.
 
+To connect the newer agent runtimes:
+
+```bash
+earpiece install --only openclaw,hermes
+```
+
+This installs local adapters for OpenClaw and Hermes. For remote agents, enable the HTTP hub and configure delivery routes:
+
+```bash
+# Store the bearer token in ~/.earpiece/.env or the env file configured with `earpiece env`
+echo 'EARPIECE_REMOTE_TOKEN=replace-with-a-long-random-token' >> ~/.earpiece/.env
+
+earpiece remote on
+earpiece route add whatsapp --to hermes:whatsapp:+15551234567 --agents hermes,openclaw --types turn_end,error
+earpiece route add ops --to hermes:telegram:-1001234567890 --types error
+
+earpiece serve
+```
+
+Remote agents POST normalized events to `http://<hub-host>:8765/remote/events` with `Authorization: Bearer <token>`. For example:
+
+```bash
+curl -X POST http://localhost:8765/remote/events \\
+  -H "Authorization: Bearer $EARPIECE_REMOTE_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"agent":"openclaw","session":"build-42","type":"turn_end","project":"checkout","text":"Finished the checkout fix and tests pass."}'
+```
+
+Routes beginning with `hermes:` use Hermes' configured outbound transports, so WhatsApp, Telegram, Discord, Slack, and other Hermes channels stay managed by Hermes. Routes beginning with `webhook:` post the update as JSON to a custom destination. Earpiece does not store or duplicate those channel credentials.
+
 Voice and summaries get better with API keys, but both are optional. Put them in your environment or in a `.env` file (see `.env.example`), then point Earpiece at it with `earpiece install --env /path/to/.env`:
 
 | Key | Used for | Without it |
@@ -47,6 +77,8 @@ Keys are read at call time and never written to logs. With an OpenAI key, the ta
 | Claude Code | `UserPromptSubmit`, `Stop`, `Notification` and `PostToolUse` hooks in `~/.claude/settings.json` | turn start/end, permission prompts, idle, and tool activity so answered prompts stay quiet |
 | Codex CLI | top-level `notify` in `~/.codex/config.toml` | turn end |
 | Claude Desktop (chats, Cowork) | a local MCP server (`earpiece mcp`) in `claude_desktop_config.json`; Claude calls its `earpiece_notify` tool and writes the line itself | done, needs you, error |
+| OpenClaw | a local plugin using OpenClaw's `agent_end`, `session_start` and `session_end` hooks | turn end, error and session lifecycle |
+| Hermes Agent | a trusted gateway hook under `$HERMES_HOME/hooks/earpiece` | turn start/end, tool activity and session lifecycle |
 | Anything else | `earpiece emit` or `earpiece run` | whatever you send |
 
 If Codex already has a `notify` command, the installer leaves it alone and tells you. `earpiece install --chain` keeps your command and adds Earpiece in front of it; `earpiece uninstall` puts yours back. The chain is safe with wrappers that call their own "previous notify" command, even when that command is Earpiece: each Codex turn is spoken once.
@@ -85,7 +117,7 @@ STATUS    AGENT         PROJECT               AGE   LAST
 ## Commands
 
 ```text
-earpiece install [--only claude-code,codex,claude-desktop] [--chain] [--env path/.env] [--hub | --node]
+earpiece install [--only claude-code,codex,claude-desktop,openclaw,hermes] [--chain] [--env path/.env] [--hub | --node]
 earpiece env /path/to/.env   # where API keys are read from
 earpiece uninstall
 earpiece test [--provider smallest|openai|say] [--agent id]

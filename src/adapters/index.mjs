@@ -14,6 +14,8 @@
 import claudeCode from "./claude-code.mjs";
 import claudeDesktop from "./claude-desktop.mjs";
 import codex from "./codex.mjs";
+import hermes from "./hermes.mjs";
+import openclaw from "./openclaw.mjs";
 
 const ADAPTERS = new Map();
 
@@ -38,4 +40,4 @@ export function getAdapter(id) {
 
 export const listAdapters = () => [...ADAPTERS.values()];
 
-for (const a of [claudeCode, codex, claudeDesktop]) registerAdapter(a);
+for (const a of [claudeCode, codex, claudeDesktop, openclaw, hermes]) registerAdapter(a);
